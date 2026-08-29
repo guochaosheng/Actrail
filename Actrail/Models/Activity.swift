@@ -1,0 +1,63 @@
+import Foundation
+import SwiftData
+
+@Model
+final class ActivityType {
+    var id: UUID
+    var name: String
+    var iconName: String
+    var color: String
+    var group: String
+    var createdAt: Date
+    var isArchived: Bool
+    
+    init(name: String, iconName: String, color: String, group: String = "默认") {
+        self.id = UUID()
+        self.name = name
+        self.iconName = iconName
+        self.color = color
+        self.group = group
+        self.createdAt = Date()
+        self.isArchived = false
+    }
+}
+
+@Model
+final class ActivityRecord {
+    var id: UUID
+    var activityType: ActivityType?
+    var startTime: Date
+    var endTime: Date?
+    var note: String
+    var isActive: Bool
+    var duration: TimeInterval {
+        guard let endTime = endTime else {
+            return Date().timeIntervalSince(startTime)
+        }
+        return endTime.timeIntervalSince(startTime)
+    }
+    
+    init(activityType: ActivityType, startTime: Date = Date(), note: String = "") {
+        self.id = UUID()
+        self.activityType = activityType
+        self.startTime = startTime
+        self.endTime = nil
+        self.note = note
+        self.isActive = true
+    }
+    
+    func stop() {
+        self.endTime = Date()
+        self.isActive = false
+    }
+    
+    func pause() {
+        self.endTime = Date()
+    }
+    
+    func resume() {
+        self.startTime = Date()
+        self.endTime = nil
+        self.isActive = true
+    }
+}
