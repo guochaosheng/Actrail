@@ -2,10 +2,19 @@ import Foundation
 import SwiftData
 import SwiftUI
 import UserNotifications
+import CoreHaptics
+import AudioToolbox
 
 class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    var onNotificationFired: ((UNNotification) -> Void)?
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .badge, .sound])
+        onNotificationFired?(notification)
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        completionHandler()
     }
 }
 
@@ -18,14 +27,25 @@ class ActivityViewModel {
     var selectedDate: Date = Date()
     var isWatchReachable = false
 
+    var activeVibrationAlert: VibrationAlert?
+
     private var modelContext: ModelContext?
     private let syncManager = WatchSyncManager.shared
     private var syncTimer: Timer?
     private let notificationDelegate = NotificationDelegate()
+    private var hapticEngine: CHHapticEngine?
+    private var hapticPlayer: CHHapticAdvancedPatternPlayer?
 
     private var cachedTypes: [WatchSyncManager.SyncedActivityType] = []
     private var cachedActiveRecords: [WatchSyncManager.SyncedActivityRecord] = []
     private var cachedCompletedRecords: [WatchSyncManager.SyncedActivityRecord] = []
+
+    struct VibrationAlert: Identifiable {
+        let id = UUID()
+        let reminder: ActivityReminder
+        let activityName: String
+        let reminderType: ReminderType
+    }
 
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
@@ -40,6 +60,7 @@ class ActivityViewModel {
 
         setupSyncManager()
         setupNotificationObservers()
+        setupHapticEngine()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.rebuildCache()
@@ -50,13 +71,70 @@ class ActivityViewModel {
     func setupNotifications() {
         let center = UNUserNotificationCenter.current()
         center.delegate = notificationDelegate
-        center.requestAuthorization(options: [.alert, .badge, .sound]) { [weak self] granted, _ in
+        center.requestAuthorization(options: [.alert, .badge, .sound, .criticalAlert]) { [weak self] granted, _ in
             if granted {
                 DispatchQueue.main.async {
                     self?.rescheduleAllReminders()
                 }
             }
         }
+
+        notificationDelegate.onNotificationFired = { [weak self] notification in
+            self?.handleNotificationFired(notification)
+        }
+    }
+
+    private func setupHapticEngine() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
+        do {
+            hapticEngine = try CHHapticEngine()
+            try hapticEngine?.start()
+        } catch {
+            print("Haptic engine failed: \(error)")
+        }
+    }
+
+    private func handleNotificationFired(_ notification: UNNotification) {
+        let identifier = notification.request.identifier
+        guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
+
+        if reminder.reminderType == .vibration || reminder.reminderType == .vibrationWithLongPress {
+            startContinuousVibration()
+            activeVibrationAlert = VibrationAlert(
+                reminder: reminder,
+                activityName: reminder.activityType?.name ?? "未知活动",
+                reminderType: reminder.reminderType
+            )
+        }
+    }
+
+    func startContinuousVibration() {
+        guard let engine = hapticEngine else {
+            AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+            return
+        }
+
+        do {
+            let pattern = try CHHapticPattern(events: [
+                CHHapticEvent(eventType: .hapticContinuous, parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.5)
+                ], relativeTime: 0, duration: 30)
+            ], parameters: [])
+
+            hapticPlayer = try engine.makeAdvancedPlayer(with: pattern)
+            try hapticPlayer?.start(atTime: CHHapticTimeImmediate)
+        } catch {
+            AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+        }
+    }
+
+    func stopVibration() {
+        do {
+            try hapticPlayer?.stop(atTime: CHHapticTimeImmediate)
+        } catch {}
+        hapticPlayer = nil
+        activeVibrationAlert = nil
     }
 
     private func rescheduleAllReminders() {
@@ -339,9 +417,9 @@ class ActivityViewModel {
         }
     }
 
-    func addReminder(activityType: ActivityType, hour: Int, minute: Int) {
+    func addReminder(activityType: ActivityType, hour: Int, minute: Int, reminderType: ReminderType = .notification) {
         guard let context = modelContext else { return }
-        let reminder = ActivityReminder(activityType: activityType, hour: hour, minute: minute)
+        let reminder = ActivityReminder(activityType: activityType, hour: hour, minute: minute, reminderType: reminderType)
         context.insert(reminder)
 
         do {
@@ -395,9 +473,15 @@ class ActivityViewModel {
         let content = UNMutableNotificationContent()
         content.title = "行迹提醒"
         content.body = "该开始\(type.name)了"
-        content.sound = .default
         content.interruptionLevel = .timeSensitive
         content.categoryIdentifier = "ACTIVITY_REMINDER"
+
+        switch reminder.reminderType {
+        case .notification:
+            content.sound = .default
+        case .vibration, .vibrationWithLongPress:
+            content.sound = UNNotificationSound.defaultCritical
+        }
 
         let calendar = Calendar.current
         var dateComponents = DateComponents()

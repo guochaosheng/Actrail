@@ -69,12 +69,15 @@ struct HomeView: View {
                     } else {
                         ForEach(viewModel.reminders) { reminder in
                             ReminderRow(reminder: reminder, viewModel: viewModel)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        viewModel.deleteReminder(reminder)
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
+                                }
                         }
-                        .onDelete { offsets in
-                            for index in offsets {
-                                viewModel.deleteReminder(viewModel.reminders[index])
-                            }
-                        }
+                        .listRowSeparator(.hidden)
                     }
                 } header: {
                     HStack {
@@ -102,6 +105,15 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showingAddReminder) {
                 AddReminderView(viewModel: viewModel)
+            }
+            .overlay {
+                if let alert = viewModel.activeVibrationAlert {
+                    VibrationAlertView(
+                        activityName: alert.activityName,
+                        reminderType: alert.reminderType,
+                        onDismiss: { viewModel.stopVibration() }
+                    )
+                }
             }
         }
     }
@@ -195,8 +207,15 @@ struct ReminderRow: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(reminder.activityType?.name ?? "未知活动")
-                    .font(.subheadline)
+                HStack {
+                    Text(reminder.activityType?.name ?? "未知活动")
+                        .font(.subheadline)
+                    Text("·")
+                        .foregroundColor(.secondary)
+                    Text(reminder.reminderType.displayName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 Text(reminder.timeString)
                     .font(.title3)
                     .fontWeight(.bold)
@@ -216,6 +235,139 @@ struct ReminderRow: View {
     }
 }
 
+struct VibrationAlertView: View {
+    let activityName: String
+    let reminderType: ReminderType
+    let onDismiss: () -> Void
+    @State private var holdProgress: CGFloat = 0
+    @State private var isHolding = false
+    @State private var holdTimer: Timer?
+    @State private var elapsedHoldTime: TimeInterval = 0
+    private let requiredHoldTime: TimeInterval = 5.0
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.8)
+                .ignoresSafeArea()
+
+            VStack(spacing: 30) {
+                Image(systemName: "bell.badge.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.red)
+                    .symbolEffect(.pulse)
+
+                Text("提醒")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+
+                Text("该开始 \(activityName) 了")
+                    .font(.title2)
+                    .foregroundColor(.white)
+
+                if reminderType == .vibration {
+                    Button(action: onDismiss) {
+                        Text("确认")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(16)
+                    }
+                    .padding(.horizontal, 40)
+                } else {
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.white.opacity(0.3), lineWidth: 8)
+                                .frame(width: 80, height: 80)
+
+                            Circle()
+                                .trim(from: 0, to: holdProgress)
+                                .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                                .frame(width: 80, height: 80)
+                                .rotationEffect(.degrees(-90))
+
+                            Text("\(Int(requiredHoldTime - elapsedHoldTime))")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
+
+                        Text("长按5秒确认关闭")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.7))
+
+                        Text("按住不放...")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    .frame(height: 180)
+                    .onLongPressGesture(minimumDuration: requiredHoldTime, pressing: { pressing in
+                        isHolding = pressing
+                        if pressing {
+                            startHoldTimer()
+                        } else {
+                            resetHoldTimer()
+                        }
+                    }, perform: {
+                        onDismiss()
+                    })
+                }
+
+                Text("时间：\(Date.now, style: .time)")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.5))
+            }
+        }
+        .onAppear {
+            if reminderType == .vibration {
+                startVibrationPattern()
+            }
+        }
+        .onDisappear {
+            holdTimer?.invalidate()
+        }
+    }
+
+    private func startVibrationPattern() {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.error)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if reminderType == .vibration {
+                generator.notificationOccurred(.error)
+            }
+        }
+    }
+
+    private func startHoldTimer() {
+        elapsedHoldTime = 0
+        holdTimer?.invalidate()
+        holdTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+            elapsedHoldTime += 0.1
+            holdProgress = CGFloat(elapsedHoldTime / requiredHoldTime)
+
+            let generator = UIImpactFeedbackGenerator(style: .heavy)
+            generator.impactOccurred()
+
+            if elapsedHoldTime >= requiredHoldTime {
+                timer.invalidate()
+                onDismiss()
+            }
+        }
+    }
+
+    private func resetHoldTimer() {
+        holdTimer?.invalidate()
+        holdTimer = nil
+        holdProgress = 0
+        elapsedHoldTime = 0
+    }
+}
+
 struct AddReminderView: View {
     @Bindable var viewModel: ActivityViewModel
     @Environment(\.dismiss) var dismiss
@@ -223,6 +375,7 @@ struct AddReminderView: View {
     @State private var selectedTypeIndex = 0
     @State private var hour = 9
     @State private var minute = 0
+    @State private var selectedReminderType: ReminderType = .notification
 
     var body: some View {
         NavigationView {
@@ -265,6 +418,29 @@ struct AddReminderView: View {
                     }
                 }
 
+                Section("提醒方式") {
+                    ForEach(ReminderType.allCases, id: \.self) { type in
+                        Button(action: { selectedReminderType = type }) {
+                            HStack {
+                                Image(systemName: type.iconName)
+                                    .frame(width: 30)
+                                VStack(alignment: .leading) {
+                                    Text(type.displayName)
+                                        .foregroundColor(.primary)
+                                    Text(reminderTypeDescription(type))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if selectedReminderType == type {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.blue)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     Button(action: saveReminder) {
                         HStack {
@@ -287,12 +463,24 @@ struct AddReminderView: View {
         }
     }
 
+    func reminderTypeDescription(_ type: ReminderType) -> String {
+        switch type {
+        case .notification:
+            return "到点时推送通知"
+        case .vibration:
+            return "弹出提示框并持续振动，点击确认关闭"
+        case .vibrationWithLongPress:
+            return "弹出提示框并持续振动，长按5秒确认关闭"
+        }
+    }
+
     func saveReminder() {
         guard selectedTypeIndex < viewModel.activityTypes.count else { return }
         viewModel.addReminder(
             activityType: viewModel.activityTypes[selectedTypeIndex],
             hour: hour,
-            minute: minute
+            minute: minute,
+            reminderType: selectedReminderType
         )
         dismiss()
     }

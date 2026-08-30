@@ -1,6 +1,28 @@
 import Foundation
 import SwiftData
 
+enum ReminderType: Int, Codable, CaseIterable {
+    case notification = 0
+    case vibration = 1
+    case vibrationWithLongPress = 2
+
+    var displayName: String {
+        switch self {
+        case .notification: return "通知"
+        case .vibration: return "振动"
+        case .vibrationWithLongPress: return "振动+长按解锁"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .notification: return "bell.fill"
+        case .vibration: return "antenna.radiowaves.left.and.right"
+        case .vibrationWithLongPress: return "lock.fill"
+        }
+    }
+}
+
 @Model
 final class ActivityType {
     var id: UUID
@@ -70,15 +92,22 @@ final class ActivityReminder {
     var minute: Int
     var isEnabled: Bool
     var repeatDays: [Int]
+    var reminderTypeRaw: Int
     var createdAt: Date
 
-    init(activityType: ActivityType, hour: Int, minute: Int, repeatDays: [Int] = [1,2,3,4,5,6,7]) {
+    var reminderType: ReminderType {
+        get { ReminderType(rawValue: reminderTypeRaw) ?? .notification }
+        set { reminderTypeRaw = newValue.rawValue }
+    }
+
+    init(activityType: ActivityType, hour: Int, minute: Int, repeatDays: [Int] = [1,2,3,4,5,6,7], reminderType: ReminderType = .notification) {
         self.id = UUID()
         self.activityType = activityType
         self.hour = hour
         self.minute = minute
         self.isEnabled = true
         self.repeatDays = repeatDays
+        self.reminderTypeRaw = reminderType.rawValue
         self.createdAt = Date()
     }
 
