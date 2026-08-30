@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @Bindable var viewModel: ActivityViewModel
     @State private var showingAddActivity = false
+    @State private var showingTypeManage = false
     @State private var selectedActivity: ActivityType?
     
     var body: some View {
@@ -73,13 +74,13 @@ struct HomeView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingAddActivity = true }) {
-                        Image(systemName: "plus")
+                    Button(action: { showingTypeManage = true }) {
+                        Image(systemName: "gearshape")
                     }
                 }
             }
-            .sheet(isPresented: $showingAddActivity) {
-                AddActivityTypeView(viewModel: viewModel)
+            .sheet(isPresented: $showingTypeManage) {
+                ActivityTypeManageView(viewModel: viewModel)
             }
         }
     }

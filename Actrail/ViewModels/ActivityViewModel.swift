@@ -14,6 +14,10 @@ class ActivityViewModel {
     private let syncManager = WatchSyncManager.shared
     private var syncTimer: Timer?
 
+    private var cachedTypes: [WatchSyncManager.SyncedActivityType] = []
+    private var cachedActiveRecords: [WatchSyncManager.SyncedActivityRecord] = []
+    private var cachedCompletedRecords: [WatchSyncManager.SyncedActivityRecord] = []
+
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
         fetchActivityTypes()
@@ -26,7 +30,11 @@ class ActivityViewModel {
 
         setupSyncManager()
         setupNotifications()
-        syncToWatch()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.rebuildCache()
+            self?.sendSync()
+        }
     }
 
     private func setupSyncManager() {
@@ -47,7 +55,8 @@ class ActivityViewModel {
         syncTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.syncToWatch()
+                self.rebuildCache()
+                self.sendSync()
             }
         }
     }
@@ -57,7 +66,8 @@ class ActivityViewModel {
             forName: .watchRequestedData, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.syncToWatch()
+                self?.rebuildCache()
+                self?.sendSync()
             }
         }
 
@@ -65,7 +75,8 @@ class ActivityViewModel {
             forName: .watchDidBecomeReachable, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.syncToWatch()
+                self?.rebuildCache()
+                self?.sendSync()
             }
         }
 
@@ -76,6 +87,55 @@ class ActivityViewModel {
                 self?.handleWatchAction(notification: notification)
             }
         }
+    }
+
+    // MARK: - Cache
+
+    private func rebuildCache() {
+        cachedTypes = activityTypes.compactMap { type in
+            WatchSyncManager.SyncedActivityType(
+                id: type.id,
+                name: type.name,
+                iconName: type.iconName,
+                color: type.color,
+                group: type.group
+            )
+        }
+
+        cachedActiveRecords = activeRecords.compactMap { record in
+            guard let type = record.activityType else { return nil }
+            return WatchSyncManager.SyncedActivityRecord(
+                id: record.id,
+                activityTypeId: type.id,
+                startTime: record.startTime,
+                endTime: record.endTime,
+                isActive: record.isActive,
+                note: record.note
+            )
+        }
+
+        cachedCompletedRecords = todayRecords
+            .filter { !$0.isActive }
+            .prefix(50)
+            .compactMap { record -> WatchSyncManager.SyncedActivityRecord? in
+                guard let type = record.activityType else { return nil }
+                return WatchSyncManager.SyncedActivityRecord(
+                    id: record.id,
+                    activityTypeId: type.id,
+                    startTime: record.startTime,
+                    endTime: record.endTime,
+                    isActive: record.isActive,
+                    note: record.note
+                )
+            }
+    }
+
+    private func sendSync() {
+        syncManager.sendActivityUpdate(
+            types: cachedTypes,
+            activeRecords: cachedActiveRecords,
+            completedRecords: cachedCompletedRecords
+        )
     }
 
     // MARK: - Handle data received from Watch
@@ -98,6 +158,7 @@ class ActivityViewModel {
                 }
             }
         }
+        rebuildCache()
     }
 
     // MARK: - Handle Watch actions (start/stop)
@@ -171,7 +232,8 @@ class ActivityViewModel {
 
         do {
             try context.save()
-            syncToWatch()
+            rebuildCache()
+            sendSync()
         } catch {
             print("Failed to save activity record: \(error)")
         }
@@ -185,9 +247,26 @@ class ActivityViewModel {
 
         do {
             try context.save()
-            syncToWatch()
+            rebuildCache()
+            sendSync()
         } catch {
             print("Failed to save activity record: \(error)")
+        }
+    }
+
+    func deleteRecord(_ record: ActivityRecord) {
+        guard let context = modelContext else { return }
+        context.delete(record)
+
+        activeRecords.removeAll { $0.id == record.id }
+        todayRecords.removeAll { $0.id == record.id }
+
+        do {
+            try context.save()
+            rebuildCache()
+            sendSync()
+        } catch {
+            print("Failed to delete activity record: \(error)")
         }
     }
 
@@ -199,6 +278,7 @@ class ActivityViewModel {
         do {
             try context.save()
             fetchActivityTypes()
+            rebuildCache()
         } catch {
             print("Failed to save activity type: \(error)")
         }
@@ -211,54 +291,10 @@ class ActivityViewModel {
         do {
             try context.save()
             fetchActivityTypes()
+            rebuildCache()
         } catch {
             print("Failed to delete activity type: \(error)")
         }
-    }
-
-    // MARK: - Sync to Watch
-
-    func syncToWatch() {
-        let syncedTypes = activityTypes.map { type in
-            WatchSyncManager.SyncedActivityType(
-                id: type.id,
-                name: type.name,
-                iconName: type.iconName,
-                color: type.color,
-                group: type.group
-            )
-        }
-
-        let syncedActiveRecords = activeRecords.map { record in
-            WatchSyncManager.SyncedActivityRecord(
-                id: record.id,
-                activityTypeId: record.activityType?.id ?? UUID(),
-                startTime: record.startTime,
-                endTime: record.endTime,
-                isActive: record.isActive,
-                note: record.note
-            )
-        }
-
-        let syncedCompletedRecords = todayRecords
-            .filter { !$0.isActive }
-            .prefix(50)
-            .map { record in
-                WatchSyncManager.SyncedActivityRecord(
-                    id: record.id,
-                    activityTypeId: record.activityType?.id ?? UUID(),
-                    startTime: record.startTime,
-                    endTime: record.endTime,
-                    isActive: record.isActive,
-                    note: record.note
-                )
-            }
-
-        syncManager.sendActivityUpdate(
-            types: syncedTypes,
-            activeRecords: syncedActiveRecords,
-            completedRecords: Array(syncedCompletedRecords)
-        )
     }
 
     // MARK: - Formatting
