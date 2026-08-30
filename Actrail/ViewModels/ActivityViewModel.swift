@@ -4,17 +4,23 @@ import SwiftUI
 import UserNotifications
 import CoreHaptics
 import AudioToolbox
+import UIKit
 
 class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    var onNotificationFired: ((UNNotification) -> Void)?
+    var onNotificationFiredForeground: ((UNNotification) -> Void)?
+    var onNotificationOpened: ((UNNotificationResponse) -> Void)?
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .badge, .sound])
-        onNotificationFired?(notification)
+        completionHandler([.banner, .badge, .sound, .list])
+        onNotificationFiredForeground?(notification)
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        onNotificationOpened?(response)
         completionHandler()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, openSettingsFor notification: UNNotification?) {
     }
 }
 
@@ -60,7 +66,6 @@ class ActivityViewModel {
 
         setupSyncManager()
         setupNotificationObservers()
-        setupHapticEngine()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.rebuildCache()
@@ -79,18 +84,12 @@ class ActivityViewModel {
             }
         }
 
-        notificationDelegate.onNotificationFired = { [weak self] notification in
+        notificationDelegate.onNotificationFiredForeground = { [weak self] notification in
             self?.handleNotificationFired(notification)
         }
-    }
 
-    private func setupHapticEngine() {
-        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
-        do {
-            hapticEngine = try CHHapticEngine()
-            try hapticEngine?.start()
-        } catch {
-            print("Haptic engine failed: \(error)")
+        notificationDelegate.onNotificationOpened = { [weak self] response in
+            self?.handleNotificationOpened(response)
         }
     }
 
@@ -108,32 +107,65 @@ class ActivityViewModel {
         }
     }
 
-    func startContinuousVibration() {
-        guard let engine = hapticEngine else {
-            AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
-            return
-        }
+    private func handleNotificationOpened(_ response: UNNotificationResponse) {
+        let identifier = response.notification.request.identifier
+        guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
 
-        do {
-            let pattern = try CHHapticPattern(events: [
-                CHHapticEvent(eventType: .hapticContinuous, parameters: [
-                    CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.5)
-                ], relativeTime: 0, duration: 30)
-            ], parameters: [])
-
-            hapticPlayer = try engine.makeAdvancedPlayer(with: pattern)
-            try hapticPlayer?.start(atTime: CHHapticTimeImmediate)
-        } catch {
-            AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+        if reminder.reminderType == .vibration || reminder.reminderType == .vibrationWithLongPress {
+            startContinuousVibration()
+            activeVibrationAlert = VibrationAlert(
+                reminder: reminder,
+                activityName: reminder.activityType?.name ?? "未知活动",
+                reminderType: reminder.reminderType
+            )
         }
     }
 
+    func startContinuousVibration() {
+        stopVibration()
+
+        if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
+            do {
+                let engine = try CHHapticEngine()
+                try engine.start()
+
+                engine.stoppedHandler = { _ in }
+
+                let pattern = try CHHapticPattern(events: [
+                    CHHapticEvent(eventType: .hapticContinuous, parameters: [
+                        CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
+                        CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.5)
+                    ], relativeTime: 0, duration: 60)
+                ], parameters: [])
+
+                let player = try engine.makeAdvancedPlayer(with: pattern)
+                try player.start(atTime: CHHapticTimeImmediate)
+                hapticPlayer = player
+                hapticEngine = engine
+            } catch {
+                startSystemVibration()
+            }
+        } else {
+            startSystemVibration()
+        }
+    }
+
+    private func startSystemVibration() {
+        AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+    }
+
     func stopVibration() {
-        do {
-            try hapticPlayer?.stop(atTime: CHHapticTimeImmediate)
-        } catch {}
-        hapticPlayer = nil
+        if let player = hapticPlayer {
+            try? player.stop(atTime: CHHapticTimeImmediate)
+            hapticPlayer = nil
+        }
+        if let engine = hapticEngine {
+            try? engine.stop()
+            hapticEngine = nil
+        }
+        if let alert = activeVibrationAlert {
+            cancelNotification(for: alert.reminder)
+        }
         activeVibrationAlert = nil
     }
 
@@ -473,15 +505,8 @@ class ActivityViewModel {
         let content = UNMutableNotificationContent()
         content.title = "行迹提醒"
         content.body = "该开始\(type.name)了"
-        content.interruptionLevel = .timeSensitive
         content.categoryIdentifier = "ACTIVITY_REMINDER"
-
-        switch reminder.reminderType {
-        case .notification:
-            content.sound = .default
-        case .vibration, .vibrationWithLongPress:
-            content.sound = UNNotificationSound.defaultCritical
-        }
+        content.userInfo = ["reminderId": reminder.id.uuidString]
 
         let calendar = Calendar.current
         var dateComponents = DateComponents()
@@ -489,18 +514,55 @@ class ActivityViewModel {
         dateComponents.hour = reminder.hour
         dateComponents.minute = reminder.minute
 
-        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
-        let request = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
+        switch reminder.reminderType {
+        case .notification:
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
+            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+            let request = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error = error {
+                    print("[Reminder] schedule failed: \(error)")
+                }
+            }
 
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("[Reminder] schedule failed: \(error)")
+        case .vibration, .vibrationWithLongPress:
+            content.sound = UNNotificationSound.defaultCritical
+            content.interruptionLevel = .critical
+
+            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+            let mainRequest = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(mainRequest) { error in
+                if let error = error {
+                    print("[Reminder] main schedule failed: \(error)")
+                }
+            }
+
+            var repeatContent = UNMutableNotificationContent()
+            repeatContent.title = "行迹提醒"
+            repeatContent.body = "该开始\(type.name)了！"
+            repeatContent.sound = UNNotificationSound.defaultCritical
+            repeatContent.interruptionLevel = .critical
+            repeatContent.badge = 1
+            repeatContent.userInfo = ["reminderId": reminder.id.uuidString, "isRepeating": true]
+
+            let repeatTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 30, repeats: true)
+            let repeatRequest = UNNotificationRequest(identifier: "\(reminder.id.uuidString)-repeat", content: repeatContent, trigger: repeatTrigger)
+            UNUserNotificationCenter.current().add(repeatRequest) { error in
+                if let error = error {
+                    print("[Reminder] repeat schedule failed: \(error)")
+                }
             }
         }
     }
 
     private func cancelNotification(for reminder: ActivityReminder) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [reminder.id.uuidString])
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: [reminder.id.uuidString, "\(reminder.id.uuidString)-repeat"]
+        )
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: [reminder.id.uuidString, "\(reminder.id.uuidString)-repeat"]
+        )
     }
 
     // MARK: - Formatting

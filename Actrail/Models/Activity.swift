@@ -92,7 +92,7 @@ final class ActivityReminder {
     var minute: Int
     var isEnabled: Bool
     var repeatDays: [Int]
-    var reminderTypeRaw: Int
+    var reminderTypeRaw: Int = 0
     var createdAt: Date
 
     var reminderType: ReminderType {
