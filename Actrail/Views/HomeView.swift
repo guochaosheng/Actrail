@@ -4,6 +4,7 @@ struct HomeView: View {
     @Bindable var viewModel: ActivityViewModel
     @State private var showingAddActivity = false
     @State private var showingTypeManage = false
+    @State private var showingAddReminder = false
     @State private var selectedActivity: ActivityType?
     
     var body: some View {
@@ -60,13 +61,29 @@ struct HomeView: View {
                     }
                     .padding(.horizontal)
                     
-                    // 今日统计
+                    // 活动提醒
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("今日统计")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        
-                        TodaySummaryCard(records: viewModel.todayRecords)
+                        HStack {
+                            Text("活动提醒")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Button(action: { showingAddReminder = true }) {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundColor(.blue)
+                            }
+                        }
+
+                        if viewModel.reminders.isEmpty {
+                            Text("暂无提醒")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 60)
+                        } else {
+                            ForEach(viewModel.reminders) { reminder in
+                                ReminderRow(reminder: reminder, viewModel: viewModel)
+                            }
+                        }
                     }
                     .padding(.horizontal)
                 }
@@ -81,6 +98,9 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showingTypeManage) {
                 ActivityTypeManageView(viewModel: viewModel)
+            }
+            .sheet(isPresented: $showingAddReminder) {
+                AddReminderView(viewModel: viewModel)
             }
         }
     }
@@ -161,82 +181,127 @@ struct ActivityTypeButton: View {
     }
 }
 
-struct TodaySummaryCard: View {
-    let records: [ActivityRecord]
-    
-    var completedRecords: [ActivityRecord] {
-        records.filter { !$0.isActive }
-    }
-    
-    var totalDuration: TimeInterval {
-        completedRecords.reduce(0) { $0 + $1.duration }
-    }
-    
+struct ReminderRow: View {
+    let reminder: ActivityReminder
+    @Bindable var viewModel: ActivityViewModel
+    @State private var showingDeleteConfirm = false
+
     var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("总时长")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text(formatDuration(totalDuration))
-                        .font(.title)
-                        .fontWeight(.bold)
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing) {
-                    Text("活动次数")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Text("\(completedRecords.count)")
-                        .font(.title)
-                        .fontWeight(.bold)
-                }
+        HStack {
+            if let type = reminder.activityType {
+                Image(systemName: type.iconName)
+                    .foregroundColor(Color(hex: type.color))
+                    .frame(width: 30)
             }
-            
-            if !completedRecords.isEmpty {
-                Divider()
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
-                        ForEach(groupedRecords, id: \.0) { type, duration in
-                            VStack(spacing: 4) {
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(reminder.activityType?.name ?? "未知活动")
+                    .font(.subheadline)
+                Text(reminder.timeString)
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .monospacedDigit()
+            }
+
+            Spacer()
+
+            Toggle("", isOn: Binding(
+                get: { reminder.isEnabled },
+                set: { _ in viewModel.toggleReminder(reminder) }
+            ))
+            .tint(.green)
+            .labelsHidden()
+        }
+        .padding(.vertical, 4)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                viewModel.deleteReminder(reminder)
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+        }
+    }
+}
+
+struct AddReminderView: View {
+    @Bindable var viewModel: ActivityViewModel
+    @Environment(\.dismiss) var dismiss
+
+    @State private var selectedTypeIndex = 0
+    @State private var hour = 9
+    @State private var minute = 0
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("选择活动") {
+                    Picker("活动类型", selection: $selectedTypeIndex) {
+                        ForEach(Array(viewModel.activityTypes.enumerated()), id: \.offset) { index, type in
+                            HStack {
+                                Image(systemName: type.iconName)
+                                    .foregroundColor(Color(hex: type.color))
                                 Text(type.name)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text(formatDuration(duration))
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
                             }
+                            .tag(index)
                         }
                     }
+                    .pickerStyle(.wheel)
+                }
+
+                Section("提醒时间") {
+                    HStack {
+                        Picker("时", selection: $hour) {
+                            ForEach(0..<24, id: \.self) { h in
+                                Text(String(format: "%02d", h)).tag(h)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(width: 80)
+
+                        Text(":")
+                            .font(.title)
+                            .fontWeight(.bold)
+
+                        Picker("分", selection: $minute) {
+                            ForEach(0..<60, id: \.self) { m in
+                                Text(String(format: "%02d", m)).tag(m)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(width: 80)
+                    }
+                }
+
+                Section {
+                    Button(action: saveReminder) {
+                        HStack {
+                            Spacer()
+                            Text("保存")
+                                .fontWeight(.bold)
+                            Spacer()
+                        }
+                    }
+                    .disabled(viewModel.activityTypes.isEmpty)
+                }
+            }
+            .navigationTitle("添加提醒")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("取消") { dismiss() }
                 }
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
     }
-    
-    var groupedRecords: [(ActivityType, TimeInterval)] {
-        let grouped = Dictionary(grouping: completedRecords) { $0.activityType! }
-        return grouped.map { (type, records) in
-            (type, records.reduce(0) { $0 + $1.duration })
-        }.sorted { $0.1 > $1.1 }
-    }
-    
-    func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = (Int(duration) % 3600) / 60
-        
-        if hours > 0 {
-            return "\(hours)小时\(minutes)分钟"
-        } else {
-            return "\(minutes)分钟"
-        }
+
+    func saveReminder() {
+        guard selectedTypeIndex < viewModel.activityTypes.count else { return }
+        viewModel.addReminder(
+            activityType: viewModel.activityTypes[selectedTypeIndex],
+            hour: hour,
+            minute: minute
+        )
+        dismiss()
     }
 }
 

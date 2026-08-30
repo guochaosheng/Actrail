@@ -1,12 +1,14 @@
 import Foundation
 import SwiftData
 import SwiftUI
+import UserNotifications
 
 @Observable
 class ActivityViewModel {
     var activityTypes: [ActivityType] = []
     var activeRecords: [ActivityRecord] = []
     var todayRecords: [ActivityRecord] = []
+    var reminders: [ActivityReminder] = []
     var selectedDate: Date = Date()
     var isWatchReachable = false
 
@@ -22,6 +24,7 @@ class ActivityViewModel {
         self.modelContext = context
         fetchActivityTypes()
         fetchTodayRecords()
+        fetchReminders()
 
         if activityTypes.isEmpty {
             insertSampleData()
@@ -30,10 +33,21 @@ class ActivityViewModel {
 
         setupSyncManager()
         setupNotifications()
+        requestNotificationPermission()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.rebuildCache()
             self?.sendSync()
+        }
+    }
+
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+            if granted {
+                print("[Reminder] notification permission granted")
+            } else {
+                print("[Reminder] notification permission denied")
+            }
         }
     }
 
@@ -295,6 +309,82 @@ class ActivityViewModel {
         } catch {
             print("Failed to delete activity type: \(error)")
         }
+    }
+
+    // MARK: - Reminders
+
+    func fetchReminders() {
+        guard let context = modelContext else { return }
+        let descriptor = FetchDescriptor<ActivityReminder>(sortBy: [SortDescriptor(\.hour), SortDescriptor(\.minute)])
+        do {
+            reminders = try context.fetch(descriptor)
+        } catch {
+            print("Failed to fetch reminders: \(error)")
+        }
+    }
+
+    func addReminder(activityType: ActivityType, hour: Int, minute: Int) {
+        guard let context = modelContext else { return }
+        let reminder = ActivityReminder(activityType: activityType, hour: hour, minute: minute)
+        context.insert(reminder)
+
+        do {
+            try context.save()
+            fetchReminders()
+            scheduleNotification(for: reminder)
+        } catch {
+            print("Failed to save reminder: \(error)")
+        }
+    }
+
+    func deleteReminder(_ reminder: ActivityReminder) {
+        guard let context = modelContext else { return }
+        cancelNotification(for: reminder)
+        context.delete(reminder)
+
+        do {
+            try context.save()
+            fetchReminders()
+        } catch {
+            print("Failed to delete reminder: \(error)")
+        }
+    }
+
+    func toggleReminder(_ reminder: ActivityReminder) {
+        guard let context = modelContext else { return }
+        reminder.isEnabled.toggle()
+
+        do {
+            try context.save()
+            if reminder.isEnabled {
+                scheduleNotification(for: reminder)
+            } else {
+                cancelNotification(for: reminder)
+            }
+        } catch {
+            print("Failed to toggle reminder: \(error)")
+        }
+    }
+
+    private func scheduleNotification(for reminder: ActivityReminder) {
+        guard reminder.isEnabled, let type = reminder.activityType else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "活动提醒"
+        content.body = "该开始\(type.name)了"
+        content.sound = .default
+
+        var dateComponents = DateComponents()
+        dateComponents.hour = reminder.hour
+        dateComponents.minute = reminder.minute
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+        let request = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
+
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private func cancelNotification(for reminder: ActivityReminder) {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [reminder.id.uuidString])
     }
 
     // MARK: - Formatting

@@ -13,6 +13,6 @@ struct ActrailApp: App {
                     syncManager.startSession()
                 }
         }
-        .modelContainer(for: [ActivityType.self, ActivityRecord.self])
+        .modelContainer(for: [ActivityType.self, ActivityRecord.self, ActivityReminder.self])
     }
 }

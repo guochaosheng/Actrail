@@ -61,3 +61,28 @@ final class ActivityRecord {
         self.isActive = true
     }
 }
+
+@Model
+final class ActivityReminder {
+    var id: UUID
+    var activityType: ActivityType?
+    var hour: Int
+    var minute: Int
+    var isEnabled: Bool
+    var repeatDays: [Int]
+    var createdAt: Date
+
+    init(activityType: ActivityType, hour: Int, minute: Int, repeatDays: [Int] = [1,2,3,4,5,6,7]) {
+        self.id = UUID()
+        self.activityType = activityType
+        self.hour = hour
+        self.minute = minute
+        self.isEnabled = true
+        self.repeatDays = repeatDays
+        self.createdAt = Date()
+    }
+
+    var timeString: String {
+        String(format: "%02d:%02d", hour, minute)
+    }
+}
