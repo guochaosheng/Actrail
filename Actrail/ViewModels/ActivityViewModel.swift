@@ -12,11 +12,17 @@ class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .badge, .sound, .list])
-        onNotificationFiredForeground?(notification)
+        let n = notification
+        DispatchQueue.main.async { [weak self] in
+            self?.onNotificationFiredForeground?(n)
+        }
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        onNotificationOpened?(response)
+        let resp = response
+        DispatchQueue.main.async { [weak self] in
+            self?.onNotificationOpened?(resp)
+        }
         completionHandler()
     }
 
@@ -94,7 +100,9 @@ class ActivityViewModel {
     }
 
     private func handleNotificationFired(_ notification: UNNotification) {
-        let identifier = notification.request.identifier
+        let rawIdentifier = notification.request.identifier
+        let identifier = rawIdentifier.replacingOccurrences(of: "-repeat", with: "")
+        guard modelContext != nil else { return }
         guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
 
         if reminder.reminderType == .vibration || reminder.reminderType == .vibrationWithLongPress {
@@ -108,7 +116,9 @@ class ActivityViewModel {
     }
 
     private func handleNotificationOpened(_ response: UNNotificationResponse) {
-        let identifier = response.notification.request.identifier
+        let rawIdentifier = response.notification.request.identifier
+        let identifier = rawIdentifier.replacingOccurrences(of: "-repeat", with: "")
+        guard modelContext != nil else { return }
         guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
 
         if reminder.reminderType == .vibration || reminder.reminderType == .vibrationWithLongPress {
