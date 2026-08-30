@@ -3,31 +3,30 @@ import SwiftData
 
 struct MainTabView: View {
     @Environment(\.modelContext) private var modelContext
-    @StateObject private var viewModel = ActivityViewModel()
-    
+    @Bindable var viewModel: ActivityViewModel
+
     var body: some View {
         TabView {
-            HomeView()
+            HomeView(viewModel: viewModel)
                 .tabItem {
                     Label("活动", systemImage: "timer")
                 }
-            
-            ActivityListView()
+
+            ActivityListView(viewModel: viewModel)
                 .tabItem {
                     Label("历史", systemImage: "calendar")
                 }
-            
-            StatisticsView()
+
+            StatisticsView(viewModel: viewModel)
                 .tabItem {
                     Label("统计", systemImage: "chart.pie")
                 }
-            
-            SettingsView()
+
+            SettingsView(viewModel: viewModel)
                 .tabItem {
                     Label("设置", systemImage: "gearshape")
                 }
         }
-        .environmentObject(viewModel)
         .onAppear {
             viewModel.setModelContext(modelContext)
         }
@@ -35,5 +34,5 @@ struct MainTabView: View {
 }
 
 #Preview {
-    MainTabView()
+    MainTabView(viewModel: ActivityViewModel())
 }

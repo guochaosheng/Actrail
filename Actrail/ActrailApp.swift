@@ -3,11 +3,15 @@ import SwiftData
 
 @main
 struct ActrailApp: App {
-    let syncManager = WatchSyncManager.shared
-    
+    @State private var viewModel = ActivityViewModel()
+    @State private var syncManager = WatchSyncManager.shared
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(viewModel: viewModel)
+                .onAppear {
+                    syncManager.startSession()
+                }
         }
         .modelContainer(for: [ActivityType.self, ActivityRecord.self])
     }

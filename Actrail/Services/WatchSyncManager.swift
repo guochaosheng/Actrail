@@ -1,15 +1,17 @@
 import Foundation
 import WatchConnectivity
+import Observation
 
-class WatchSyncManager: NSObject, ObservableObject, WCSessionDelegate {
+@Observable
+class WatchSyncManager {
     static let shared = WatchSyncManager()
-    
-    @Published var isReachable = false
-    @Published var lastSyncDate: Date?
-    
-    private var session: WCSession?
-    private var onActivityUpdate: (([SyncedActivityType], [SyncedActivityRecord]) -> Void)?
-    
+
+    var isReachable = false
+    var lastSyncDate: Date?
+
+    var onActivityUpdate: (([SyncedActivityType], [SyncedActivityRecord]) -> Void)?
+    var onReachabilityChange: ((Bool) -> Void)?
+
     struct SyncedActivityType: Codable, Identifiable {
         let id: UUID
         let name: String
@@ -17,7 +19,7 @@ class WatchSyncManager: NSObject, ObservableObject, WCSessionDelegate {
         let color: String
         let group: String
     }
-    
+
     struct SyncedActivityRecord: Codable, Identifiable {
         let id: UUID
         let activityTypeId: UUID
@@ -26,143 +28,132 @@ class WatchSyncManager: NSObject, ObservableObject, WCSessionDelegate {
         let isActive: Bool
         let note: String
     }
-    
+
     struct SyncMessage: Codable {
         let activityTypes: [SyncedActivityType]
         let activeRecords: [SyncedActivityRecord]
         let completedRecords: [SyncedActivityRecord]
         let timestamp: Date
     }
-    
-    override init() {
-        super.init()
-        if WCSession.isSupported() {
-            session = WCSession.default
-            session?.delegate = self
-            session?.activate()
-        }
+
+    private let delegateBox = DelegateBox()
+
+    private init() {
+        delegateBox.syncManager = self
     }
-    
+
+    func startSession() {
+        guard WCSession.isSupported() else { return }
+        let session = WCSession.default
+        session.delegate = delegateBox
+        session.activate()
+    }
+
     func startActivityUpdateHandler(_ handler: @escaping ([SyncedActivityType], [SyncedActivityRecord]) -> Void) {
         self.onActivityUpdate = handler
     }
-    
+
     func sendActivityUpdate(types: [SyncedActivityType], activeRecords: [SyncedActivityRecord], completedRecords: [SyncedActivityRecord]) {
-        guard let session = session else {
-            print("[iPhone Sync] WCSession not available")
-            return
-        }
-        
         let message = SyncMessage(
             activityTypes: types,
             activeRecords: activeRecords,
             completedRecords: completedRecords,
             timestamp: Date()
         )
-        
+
         guard let data = try? JSONEncoder().encode(message) else {
             print("[iPhone Sync] Failed to encode")
             return
         }
-        
+
         let userInfo: [String: Any] = ["activityData": data]
-        
+        let session = WCSession.default
+
         if session.isReachable {
-            // 前台可达：先 sendMessage 实时送达，失败时有 transferUserInfo 兜底
-            session.sendMessage(userInfo, replyHandler: { reply in
-                print("[iPhone Sync] sendMessage succeeded: \(reply)")
-            }, errorHandler: { error in
-                print("[iPhone Sync] sendMessage failed: \(error), transferUserInfo will deliver")
-            })
-            print("[iPhone Sync] sendMessage sent (types=\(types.count), active=\(activeRecords.count))")
+            session.sendMessage(userInfo, replyHandler: nil) { error in
+                print("[iPhone Sync] sendMessage failed: \(error)")
+            }
         } else {
-            print("[iPhone Sync] not reachable, using transferUserInfo")
+            session.transferUserInfo(userInfo)
         }
-        
-        // 始终用 transferUserInfo 保证后台也能送达
-        session.transferUserInfo(userInfo)
-        print("[iPhone Sync] transferUserInfo queued")
-        
+
         lastSyncDate = Date()
     }
-    
+
     func sendActivityStart(typeId: UUID) {
-        guard let session = session else { return }
         let userInfo: [String: Any] = ["action": "startActivity", "typeId": typeId.uuidString]
+        let session = WCSession.default
         if session.isReachable {
-            session.sendMessage(userInfo, replyHandler: nil, errorHandler: { _ in
-                session.transferUserInfo(userInfo)
-            })
+            session.sendMessage(userInfo, replyHandler: nil, errorHandler: nil)
         } else {
             session.transferUserInfo(userInfo)
         }
     }
-    
+
     func sendActivityStop(recordId: UUID) {
-        guard let session = session else { return }
         let userInfo: [String: Any] = ["action": "stopActivity", "recordId": recordId.uuidString]
+        let session = WCSession.default
         if session.isReachable {
-            session.sendMessage(userInfo, replyHandler: nil, errorHandler: { _ in
-                session.transferUserInfo(userInfo)
-            })
+            session.sendMessage(userInfo, replyHandler: nil, errorHandler: nil)
         } else {
             session.transferUserInfo(userInfo)
         }
     }
-    
-    // MARK: - WCSessionDelegate
-    
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        DispatchQueue.main.async {
-            self.isReachable = session.isReachable
-        }
-        print("[iPhone Sync] WCSession activated: state=\(activationState.rawValue), reachable=\(session.isReachable)")
-    }
-    
-    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        print("[iPhone Sync] received message: \(message.keys.sorted())")
-        handleReceivedPayload(message)
-    }
-    
-    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        print("[iPhone Sync] received userInfo: \(userInfo.keys.sorted())")
-        handleReceivedPayload(userInfo)
-    }
-    
-    private func handleReceivedPayload(_ payload: [String: Any]) {
+
+    func handleReceivedPayload(_ payload: [String: Any]) {
         if let data = payload["activityData"] as? Data {
-            do {
-                let message = try JSONDecoder().decode(SyncMessage.self, from: data)
-                DispatchQueue.main.async {
-                    self.lastSyncDate = message.timestamp
-                    self.onActivityUpdate?(message.activityTypes, message.activeRecords)
+            let message = try? JSONDecoder().decode(SyncMessage.self, from: data)
+            if let message {
+                lastSyncDate = message.timestamp
+                Task { @MainActor in
+                    onActivityUpdate?(message.activityTypes, message.activeRecords)
                 }
-            } catch {
-                print("[iPhone Sync] Failed to decode: \(error)")
             }
         } else if let action = payload["action"] as? String {
-            print("[iPhone Sync] received action: \(action)")
             if action == "requestData" {
                 NotificationCenter.default.post(name: .watchRequestedData, object: nil)
             }
             NotificationCenter.default.post(name: .watchActivityAction, object: nil, userInfo: payload)
         }
     }
-    
+}
+
+class DelegateBox: NSObject, WCSessionDelegate {
+    weak var syncManager: WatchSyncManager?
+
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        Task { @MainActor in
+            syncManager?.isReachable = session.isReachable
+            syncManager?.onReachabilityChange?(session.isReachable)
+        }
+        print("[iPhone Sync] WCSession activated: state=\(activationState.rawValue), reachable=\(session.isReachable)")
+    }
+
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        print("[iPhone Sync] received message: \(message.keys.sorted())")
+        syncManager?.handleReceivedPayload(message)
+    }
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        print("[iPhone Sync] received userInfo: \(userInfo.keys.sorted())")
+        syncManager?.handleReceivedPayload(userInfo)
+    }
+
     func sessionReachabilityDidChange(_ session: WCSession) {
-        DispatchQueue.main.async {
-            self.isReachable = session.isReachable
+        Task { @MainActor in
+            syncManager?.isReachable = session.isReachable
+            syncManager?.onReachabilityChange?(session.isReachable)
         }
         print("[iPhone Sync] reachability changed: \(session.isReachable)")
         if session.isReachable {
             NotificationCenter.default.post(name: .watchDidBecomeReachable, object: nil)
         }
     }
-    
+
     #if os(iOS)
     func sessionDidBecomeInactive(_ session: WCSession) {}
     func sessionDidDeactivate(_ session: WCSession) {
-        session.activate()
+        WCSession.default.activate()
     }
     #endif
 }

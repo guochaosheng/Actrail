@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AddActivityTypeView: View {
-    @EnvironmentObject var viewModel: ActivityViewModel
+    @Bindable var viewModel: ActivityViewModel
     @Environment(\.dismiss) var dismiss
     
     @State private var name = ""
@@ -110,6 +110,5 @@ struct AddActivityTypeView: View {
 }
 
 #Preview {
-    AddActivityTypeView()
-        .environmentObject(ActivityViewModel())
+    AddActivityTypeView(viewModel: ActivityViewModel())
 }

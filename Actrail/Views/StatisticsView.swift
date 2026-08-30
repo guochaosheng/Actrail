@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct StatisticsView: View {
-    @EnvironmentObject var viewModel: ActivityViewModel
+    @Bindable var viewModel: ActivityViewModel
     @State private var selectedPeriod = "今日"
     let periods = ["今日", "本周", "本月"]
     
@@ -181,6 +181,5 @@ struct ActivityRankingRow: View {
 }
 
 #Preview {
-    StatisticsView()
-        .environmentObject(ActivityViewModel())
+    StatisticsView(viewModel: ActivityViewModel())
 }

@@ -2,12 +2,15 @@ import SwiftUI
 
 @main
 struct WatchApp: App {
-    @StateObject private var viewModel = WatchActivityViewModel()
-    
+    @State private var viewModel = WatchActivityViewModel()
+    @State private var syncManager = WatchSyncManager.shared
+
     var body: some Scene {
         WindowGroup {
-            WatchContentView()
-                .environmentObject(viewModel)
+            WatchContentView(viewModel: viewModel)
+                .onAppear {
+                    syncManager.startSession()
+                }
         }
     }
 }

@@ -1,9 +1,9 @@
 import SwiftUI
 
 struct WatchContentView: View {
-    @EnvironmentObject var viewModel: WatchActivityViewModel
+    @Bindable var viewModel: WatchActivityViewModel
     @State private var showingActivityList = false
-    
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -23,20 +23,18 @@ struct WatchContentView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    // 正在进行的活动
                     if !viewModel.activeRecords.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("进行中")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            
+
                             ForEach(viewModel.activeRecords) { record in
-                                WatchActiveActivityCard(record: record)
+                                WatchActiveActivityCard(viewModel: viewModel, record: record)
                             }
                         }
                     }
-                    
-                    // 开始新活动按钮
+
                     Button(action: { showingActivityList = true }) {
                         HStack {
                             Image(systemName: "plus.circle.fill")
@@ -45,14 +43,13 @@ struct WatchContentView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    
-                    // 今日完成的活动
+
                     if !viewModel.completedRecords.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("已完成")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            
+
                             ForEach(viewModel.completedRecords.prefix(3)) { record in
                                 WatchCompletedActivityRow(record: record)
                             }
@@ -63,18 +60,18 @@ struct WatchContentView: View {
             }
             .navigationBarHidden(true)
             .sheet(isPresented: $showingActivityList) {
-                WatchActivityListView()
+                WatchActivityListView(viewModel: viewModel)
             }
         }
     }
 }
 
 struct WatchActiveActivityCard: View {
-    @EnvironmentObject var viewModel: WatchActivityViewModel
+    @Bindable var viewModel: WatchActivityViewModel
     let record: WatchActivityRecord
     @State private var elapsedTime: TimeInterval = 0
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-    
+
     var body: some View {
         HStack {
             Image(systemName: record.activityType.iconName)
@@ -83,20 +80,20 @@ struct WatchActiveActivityCard: View {
                 .frame(width: 36, height: 36)
                 .background(Color(hex: record.activityType.color).opacity(0.2))
                 .clipShape(Circle())
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.activityType.name)
                     .font(.caption)
                     .fontWeight(.medium)
-                
+
                 Text(viewModel.formatDuration(elapsedTime))
                     .font(.body)
                     .fontWeight(.bold)
                     .monospacedDigit()
             }
-            
+
             Spacer()
-            
+
             Button(action: {
                 viewModel.stopActivity(record)
             }) {
@@ -122,29 +119,29 @@ struct WatchActiveActivityCard: View {
 
 struct WatchCompletedActivityRow: View {
     let record: WatchActivityRecord
-    
+
     var body: some View {
         HStack {
             Image(systemName: record.activityType.iconName)
                 .font(.caption)
                 .foregroundColor(Color(hex: record.activityType.color))
                 .frame(width: 24, height: 24)
-            
+
             Text(record.activityType.name)
                 .font(.caption2)
-            
+
             Spacer()
-            
+
             Text(formatDuration(record.duration))
                 .font(.caption2)
                 .foregroundColor(.secondary)
         }
     }
-    
+
     func formatDuration(_ duration: TimeInterval) -> String {
         let hours = Int(duration) / 3600
         let minutes = (Int(duration) % 3600) / 60
-        
+
         if hours > 0 {
             return "\(hours)h \(minutes)m"
         } else {
@@ -154,9 +151,9 @@ struct WatchCompletedActivityRow: View {
 }
 
 struct WatchActivityListView: View {
-    @EnvironmentObject var viewModel: WatchActivityViewModel
+    @Bindable var viewModel: WatchActivityViewModel
     @Environment(\.dismiss) var dismiss
-    
+
     var body: some View {
         NavigationStack {
             List(viewModel.activityTypes) { type in
@@ -168,7 +165,7 @@ struct WatchActivityListView: View {
                         Image(systemName: type.iconName)
                             .foregroundColor(Color(hex: type.color))
                             .frame(width: 30)
-                        
+
                         Text(type.name)
                     }
                 }
@@ -187,6 +184,5 @@ struct WatchActivityListView: View {
 }
 
 #Preview {
-    WatchContentView()
-        .environmentObject(WatchActivityViewModel())
+    WatchContentView(viewModel: WatchActivityViewModel())
 }

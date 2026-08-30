@@ -1,86 +1,53 @@
 import Foundation
 import WatchConnectivity
-import Combine
 
-@MainActor
-class WatchActivityViewModel: ObservableObject {
-    @Published var activityTypes: [WatchActivityType] = []
-    @Published var activeRecords: [WatchActivityRecord] = []
-    @Published var completedRecords: [WatchActivityRecord] = []
-    @Published var isReachable = false
-    
+@Observable
+class WatchActivityViewModel {
+    var activityTypes: [WatchActivityType] = []
+    var activeRecords: [WatchActivityRecord] = []
+    var completedRecords: [WatchActivityRecord] = []
+    var isReachable = false
+
     private let syncManager = WatchSyncManager.shared
-    private var retryCount = 0
-    private let maxRetries = 20
-    private var retryTimer: Timer?
-    private var cancellables = Set<AnyCancellable>()
+    private var syncTimer: Timer?
 
     init() {
         setupSyncListener()
         setupReachabilityObserver()
         requestInitialData()
-        tryLoadApplicationContext()
     }
 
     deinit {
-        retryTimer?.invalidate()
-    }
-
-    private func tryLoadApplicationContext() {
-        if let data = syncManager.loadApplicationContextData() {
-            print("[Watch VM] Loading applicationContext on launch")
-            handleSyncData(data)
-        }
+        syncTimer?.invalidate()
     }
 
     private func setupReachabilityObserver() {
-        syncManager.$isReachable
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] reachable in
-                guard let self else { return }
-                self.isReachable = reachable
+        syncManager.onReachabilityChange = { [weak self] reachable in
+            Task { @MainActor in
+                self?.isReachable = reachable
                 if reachable {
-                    print("[Watch VM] Watch became reachable, requesting data")
-                    self.retryCount = 0
-                    self.requestData()
+                    self?.requestInitialData()
                 }
             }
-            .store(in: &cancellables)
+        }
     }
 
     private func requestInitialData() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self else { return }
-            print("[Watch VM] Initial data request (retry \(self.retryCount), reachable=\(self.syncManager.isReachable))")
-            self.syncManager.requestDataFromiPhone()
-            self.startRetryTimer()
-        }
+        syncManager.requestDataFromiPhone()
+        startPeriodicSync()
     }
 
-    private func startRetryTimer() {
-        retryTimer?.invalidate()
-        retryTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] timer in
+    private func startPeriodicSync() {
+        syncTimer?.invalidate()
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { timer.invalidate(); return }
-                if self.retryCount >= self.maxRetries {
-                    print("[Watch VM] Stopping retry after max attempts")
-                    timer.invalidate()
-                    return
-                }
-                self.retryCount += 1
-                print("[Watch VM] Retrying data request (\(self.retryCount)/\(self.maxRetries))")
-                self.syncManager.requestDataFromiPhone()
+                self?.syncManager.requestDataFromiPhone()
             }
         }
     }
 
-    private func requestData() {
-        print("[Watch VM] Requesting data from iPhone")
-        syncManager.requestDataFromiPhone()
-    }
-
     private func setupSyncListener() {
-        syncManager.startDataUpdateHandler { [weak self] data in
+        syncManager.onDataUpdate = { [weak self] data in
             Task { @MainActor in
                 self?.handleSyncData(data)
             }
@@ -90,7 +57,6 @@ class WatchActivityViewModel: ObservableObject {
     private func handleSyncData(_ data: Data) {
         do {
             let message = try JSONDecoder().decode(WatchSyncManager.SyncMessage.self, from: data)
-            print("[Watch VM] Received sync: types=\(message.activityTypes.count), active=\(message.activeRecords.count), completed=\(message.completedRecords.count)")
 
             let types = message.activityTypes.map { syncType in
                 WatchActivityType(
@@ -126,9 +92,6 @@ class WatchActivityViewModel: ObservableObject {
             self.activityTypes = types
             self.activeRecords = active
             self.completedRecords = completed
-            self.retryCount = self.maxRetries
-            retryTimer?.invalidate()
-            print("[Watch VM] Updated UI: \(active.count) active, \(completed.count) completed, \(types.count) types")
         } catch {
             print("[Watch VM] Failed to decode sync data: \(error)")
         }

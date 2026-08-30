@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    var viewModel: ActivityViewModel
     @State private var notificationsEnabled = true
     @State private var hapticFeedback = true
     @State private var autoBackup = false
@@ -72,5 +73,5 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView()
+    SettingsView(viewModel: ActivityViewModel())
 }

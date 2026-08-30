@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @EnvironmentObject var viewModel: ActivityViewModel
+    @Bindable var viewModel: ActivityViewModel
     @State private var showingAddActivity = false
     @State private var selectedActivity: ActivityType?
     
@@ -33,7 +33,7 @@ struct HomeView: View {
                                 .foregroundColor(.secondary)
                             
                             ForEach(viewModel.activeRecords) { record in
-                                ActiveActivityCard(record: record)
+                                ActiveActivityCard(viewModel: viewModel, record: record)
                             }
                         }
                         .padding(.horizontal)
@@ -79,14 +79,14 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $showingAddActivity) {
-                AddActivityTypeView()
+                AddActivityTypeView(viewModel: viewModel)
             }
         }
     }
 }
 
 struct ActiveActivityCard: View {
-    @EnvironmentObject var viewModel: ActivityViewModel
+    @Bindable var viewModel: ActivityViewModel
     let record: ActivityRecord
     @State private var elapsedTime: TimeInterval = 0
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -240,6 +240,5 @@ struct TodaySummaryCard: View {
 }
 
 #Preview {
-    HomeView()
-        .environmentObject(ActivityViewModel())
+    HomeView(viewModel: ActivityViewModel())
 }

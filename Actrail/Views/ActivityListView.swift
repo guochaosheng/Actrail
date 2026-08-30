@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ActivityListView: View {
-    @EnvironmentObject var viewModel: ActivityViewModel
+    @Bindable var viewModel: ActivityViewModel
     @State private var selectedDate = Date()
     @State private var showingDatePicker = false
     
@@ -79,6 +79,5 @@ struct ActivityRecordRow: View {
 }
 
 #Preview {
-    ActivityListView()
-        .environmentObject(ActivityViewModel())
+    ActivityListView(viewModel: ActivityViewModel())
 }
