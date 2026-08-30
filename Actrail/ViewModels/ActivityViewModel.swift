@@ -73,7 +73,6 @@ class ActivityViewModel {
 
         setupSyncManager()
         setupNotificationObservers()
-        setupNotifications()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.rebuildCache()
@@ -116,12 +115,12 @@ class ActivityViewModel {
         guard modelContext != nil else { return }
         guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
 
-        if reminder.reminderType == .vibration || reminder.reminderType == .vibrationWithLongPress {
+        if reminder.currentReminderType == .vibration || reminder.currentReminderType == .vibrationWithLongPress {
             startContinuousVibration()
             activeVibrationAlert = VibrationAlert(
                 reminder: reminder,
                 activityName: reminder.activityType?.name ?? "未知活动",
-                reminderType: reminder.reminderType
+                reminderType: reminder.currentReminderType
             )
         }
     }
@@ -132,12 +131,12 @@ class ActivityViewModel {
         let identifier = rawIdentifier.replacingOccurrences(of: "-repeat", with: "")
         guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
 
-        if reminder.reminderType == .vibration || reminder.reminderType == .vibrationWithLongPress {
+        if reminder.currentReminderType == .vibration || reminder.currentReminderType == .vibrationWithLongPress {
             startContinuousVibration()
             activeVibrationAlert = VibrationAlert(
                 reminder: reminder,
                 activityName: reminder.activityType?.name ?? "未知活动",
-                reminderType: reminder.reminderType
+                reminderType: reminder.currentReminderType
             )
         }
     }
@@ -492,15 +491,9 @@ class ActivityViewModel {
             try context.save()
             fetchReminders()
             scheduleNotification(for: reminder)
-
-            let content = UNMutableNotificationContent()
-            content.title = "行迹"
-            content.body = "提醒已设置：\(reminder.timeString) \(activityType.name)"
-            content.sound = .default
-            let testRequest = UNNotificationRequest(identifier: "test-\(reminder.id)", content: content, trigger: nil)
-            UNUserNotificationCenter.current().add(testRequest)
         } catch {
             print("Failed to save reminder: \(error)")
+            context.rollback()
         }
     }
 
@@ -548,7 +541,7 @@ class ActivityViewModel {
         dateComponents.hour = reminder.hour
         dateComponents.minute = reminder.minute
 
-        switch reminder.reminderType {
+        switch reminder.currentReminderType {
         case .notification:
             content.sound = .default
             content.interruptionLevel = .timeSensitive

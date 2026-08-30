@@ -212,7 +212,7 @@ struct ReminderRow: View {
                         .font(.subheadline)
                     Text("·")
                         .foregroundColor(.secondary)
-                    Text(reminder.reminderType.displayName)
+                    Text(reminder.currentReminderType.displayName)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

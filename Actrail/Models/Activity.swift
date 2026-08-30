@@ -92,13 +92,8 @@ final class ActivityReminder {
     var minute: Int
     var isEnabled: Bool
     var repeatDays: [Int]
-    var reminderTypeRaw: Int = 0
+    var reminderTypeRaw: Int
     var createdAt: Date
-
-    var reminderType: ReminderType {
-        get { ReminderType(rawValue: reminderTypeRaw) ?? .notification }
-        set { reminderTypeRaw = newValue.rawValue }
-    }
 
     init(activityType: ActivityType, hour: Int, minute: Int, repeatDays: [Int] = [1,2,3,4,5,6,7], reminderType: ReminderType = .notification) {
         self.id = UUID()
@@ -113,5 +108,9 @@ final class ActivityReminder {
 
     var timeString: String {
         String(format: "%02d:%02d", hour, minute)
+    }
+
+    var currentReminderType: ReminderType {
+        ReminderType(rawValue: reminderTypeRaw) ?? .notification
     }
 }
