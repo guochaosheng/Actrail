@@ -82,7 +82,7 @@ class ActivityViewModel {
     func setupNotifications() {
         let center = UNUserNotificationCenter.current()
         center.delegate = notificationDelegate
-        center.requestAuthorization(options: [.alert, .badge, .sound, .criticalAlert]) { [weak self] granted, _ in
+        center.requestAuthorization(options: [.alert, .badge, .sound]) { [weak self] granted, _ in
             if granted {
                 DispatchQueue.main.async {
                     self?.rescheduleAllReminders()
@@ -91,11 +91,15 @@ class ActivityViewModel {
         }
 
         notificationDelegate.onNotificationFiredForeground = { [weak self] notification in
-            self?.handleNotificationFired(notification)
+            DispatchQueue.main.async {
+                self?.handleNotificationFired(notification)
+            }
         }
 
         notificationDelegate.onNotificationOpened = { [weak self] response in
-            self?.handleNotificationOpened(response)
+            DispatchQueue.main.async {
+                self?.handleNotificationOpened(response)
+            }
         }
     }
 
@@ -202,11 +206,14 @@ class ActivityViewModel {
 
         isWatchReachable = syncManager.isReachable
 
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.rebuildCache()
-                self.sendSync()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self else { return }
+            self.syncTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.modelContext != nil else { return }
+                    self.rebuildCache()
+                    self.sendSync()
+                }
             }
         }
     }
@@ -242,32 +249,19 @@ class ActivityViewModel {
     // MARK: - Cache
 
     private func rebuildCache() {
-        cachedTypes = activityTypes.compactMap { type in
-            WatchSyncManager.SyncedActivityType(
-                id: type.id,
-                name: type.name,
-                iconName: type.iconName,
-                color: type.color,
-                group: type.group
-            )
-        }
+        guard modelContext != nil else { return }
+        do {
+            cachedTypes = activityTypes.compactMap { type in
+                WatchSyncManager.SyncedActivityType(
+                    id: type.id,
+                    name: type.name,
+                    iconName: type.iconName,
+                    color: type.color,
+                    group: type.group
+                )
+            }
 
-        cachedActiveRecords = activeRecords.compactMap { record in
-            guard let type = record.activityType else { return nil }
-            return WatchSyncManager.SyncedActivityRecord(
-                id: record.id,
-                activityTypeId: type.id,
-                startTime: record.startTime,
-                endTime: record.endTime,
-                isActive: record.isActive,
-                note: record.note
-            )
-        }
-
-        cachedCompletedRecords = todayRecords
-            .filter { !$0.isActive }
-            .prefix(50)
-            .compactMap { record -> WatchSyncManager.SyncedActivityRecord? in
+            cachedActiveRecords = activeRecords.compactMap { record in
                 guard let type = record.activityType else { return nil }
                 return WatchSyncManager.SyncedActivityRecord(
                     id: record.id,
@@ -278,6 +272,27 @@ class ActivityViewModel {
                     note: record.note
                 )
             }
+
+            cachedCompletedRecords = todayRecords
+                .filter { !$0.isActive }
+                .prefix(50)
+                .compactMap { record -> WatchSyncManager.SyncedActivityRecord? in
+                    guard let type = record.activityType else { return nil }
+                    return WatchSyncManager.SyncedActivityRecord(
+                        id: record.id,
+                        activityTypeId: type.id,
+                        startTime: record.startTime,
+                        endTime: record.endTime,
+                        isActive: record.isActive,
+                        note: record.note
+                    )
+                }
+        } catch {
+            print("[ViewModel] rebuildCache failed: \(error)")
+            cachedTypes = []
+            cachedActiveRecords = []
+            cachedCompletedRecords = []
+        }
     }
 
     private func sendSync() {
