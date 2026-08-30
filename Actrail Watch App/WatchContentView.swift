@@ -8,6 +8,21 @@ struct WatchContentView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
+                    HStack(alignment: .lastTextBaseline, spacing: 6) {
+                        Text("行迹")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(viewModel.isReachable ? .green : .orange)
+                                .frame(width: 6, height: 6)
+                            Text(viewModel.isReachable ? "已连接" : "未连接")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                     // 正在进行的活动
                     if !viewModel.activeRecords.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -46,7 +61,7 @@ struct WatchContentView: View {
                 }
                 .padding()
             }
-            .navigationTitle("行迹")
+            .navigationBarHidden(true)
             .sheet(isPresented: $showingActivityList) {
                 WatchActivityListView()
             }

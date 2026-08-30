@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import SwiftUI
+import Combine
 
 @MainActor
 class ActivityViewModel: ObservableObject {
@@ -8,26 +9,37 @@ class ActivityViewModel: ObservableObject {
     @Published var activeRecords: [ActivityRecord] = []
     @Published var todayRecords: [ActivityRecord] = []
     @Published var selectedDate: Date = Date()
+    @Published var isWatchReachable = false
     
     private var modelContext: ModelContext?
     private let syncManager = WatchSyncManager.shared
+    private var cancellables = Set<AnyCancellable>()
+    private var syncTimer: Timer?
     
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
         fetchActivityTypes()
         fetchTodayRecords()
         
-        // 如果数据库为空，插入示例数据
         if activityTypes.isEmpty {
             insertSampleData()
             fetchActivityTypes()
         }
         
-        // 设置同步监听
         setupSyncListener()
-        
-        // 同步数据到Watch
         syncToWatch()
+
+        syncManager.$isReachable
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$isWatchReachable)
+        
+        // 每 5 秒自动同步一次，确保 Watch 能收到最新数据
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.activeRecords.isEmpty else { return }
+                self.syncToWatch()
+            }
+        }
     }
     
     private func setupSyncListener() {

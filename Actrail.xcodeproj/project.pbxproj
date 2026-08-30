@@ -3,90 +3,64 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1B2C3D4000000000000CC01 /* ActrailApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB01 /* ActrailApp.swift */; };
-		A1B2C3D4000000000000CC02 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB02 /* ContentView.swift */; };
-		A1B2C3D4000000000000CC03 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB03 /* Assets.xcassets */; };
-		A1B2C3D4000000000000CC04 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB04 /* Preview Assets.xcassets */; };
-		A1B2C3D4000000000000CC05 /* Activity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB05 /* Activity.swift */; };
-		A1B2C3D4000000000000CC06 /* ActivityViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB06 /* ActivityViewModel.swift */; };
-		A1B2C3D4000000000000CC07 /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB07 /* Color+Hex.swift */; };
-		A1B2C3D4000000000000CC08 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB08 /* MainTabView.swift */; };
-		A1B2C3D4000000000000CC09 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB09 /* HomeView.swift */; };
-		A1B2C3D4000000000000CC0A /* ActivityListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB0A /* ActivityListView.swift */; };
-		A1B2C3D4000000000000CC0B /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB0B /* StatisticsView.swift */; };
-		A1B2C3D4000000000000CC0C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB0C /* SettingsView.swift */; };
-		A1B2C3D4000000000000CC0D /* AddActivityTypeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB0D /* AddActivityTypeView.swift */; };
-		A1B2C3D4000000000000CC0E /* WatchSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000BB0E /* WatchSyncManager.swift */; };
-		361085FC71ED824FC904BFE7 /* WatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDAB1B91D80F12A3D695AC9 /* WatchApp.swift */; };
-		BC01249D77B07EFEB2B30189 /* WatchContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEEE2D0F76FDC63C1E141595 /* WatchContentView.swift */; };
-		6EC7A1A1808C1D3FBA5BE229 /* WatchActivityViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BD682B6F52D9251D1BDF7A9 /* WatchActivityViewModel.swift */; };
-		DB10B7A108CE417454BD288B /* WatchSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C0C054A705D60C97C9B08B /* WatchSyncManager.swift */; };
-		55836189C09CAA1CEC137E60 /* WatchColor+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB8F79D92F98DD276934D13 /* WatchColor+Hex.swift */; };
-		F715D5A1FB41F6F4BD6940D3 /* Actrail Watch App.app in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 012A72BD71DCA6466B8633AE /* Actrail Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A1B2C3D400000001 /* Actrail Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002 /* Actrail Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		5B54E7E64D1286A4EEDDD07F /* PBXContainerItemProxy */ = {
+		A1B2C3D400000003 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = A1B2C3D4000000000000AA11 /* Project object */;
+			containerPortal = A1B2C3D400000010 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = BAD1CB9C3A4878D0ACB9A3EF;
+			remoteGlobalIDString = A1B2C3D400000006;
 			remoteInfo = "Actrail Watch App";
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		D69571C117AA9E38D9475862 /* Embed Foundation Extensions */ = {
+		A1B2C3D400000004 /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
 			files = (
-				F715D5A1FB41F6F4BD6940D3 /* Actrail Watch App.app in Embed Foundation Extensions */,
+				A1B2C3D400000001 /* Actrail Watch App.app in Embed Watch Content */,
 			);
-			name = "Embed Foundation Extensions";
+			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		A1B2C3D4000000000000BB01 /* ActrailApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActrailApp.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB02 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB03 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB04 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB05 /* Activity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Activity.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB06 /* ActivityViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityViewModel.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB07 /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB08 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB09 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB0A /* ActivityListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityListView.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB0B /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB0C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB0D /* AddActivityTypeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddActivityTypeView.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB0E /* WatchSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyncManager.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB10 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A1B2C3D4000000000000BB0F /* Actrail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Actrail.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		EBDAB1B91D80F12A3D695AC9 /* WatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchApp.swift; sourceTree = "<group>"; };
-		CEEE2D0F76FDC63C1E141595 /* WatchContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchContentView.swift; sourceTree = "<group>"; };
-		2BD682B6F52D9251D1BDF7A9 /* WatchActivityViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchActivityViewModel.swift; sourceTree = "<group>"; };
-		E2C0C054A705D60C97C9B08B /* WatchSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyncManager.swift; sourceTree = "<group>"; };
-		EDB8F79D92F98DD276934D13 /* WatchColor+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchColor+Hex.swift"; sourceTree = "<group>"; };
-		012A72BD71DCA6466B8633AE /* Actrail Watch App.app */ = {isa = PBXFileReference; explicitFileType = "wrapper.application"; includeInIndex = 0; path = "Actrail Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D400000005 /* Actrail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Actrail.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D400000002 /* Actrail Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Actrail Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A1B2C3D400000007 /* Actrail */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Actrail;
+			sourceTree = "<group>";
+		};
+		A1B2C3D400000008 /* Actrail Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Actrail Watch App";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
-		A1B2C3D4000000000000AA44 /* Frameworks */ = {
+		A1B2C3D400000009 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		0B31BE754647B8897F37E9BE /* Frameworks */ = {
+		A1B2C3D40000000A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -96,94 +70,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A1B2C3D4000000000000DD01 /* Root */ = {
+		A1B2C3D40000000B = {
 			isa = PBXGroup;
 			children = (
-				A1B2C3D4000000000000DD02 /* Actrail */,
-				A1B2C3D4000000000000DD08 /* Products */,
+				A1B2C3D400000007 /* Actrail */,
+				A1B2C3D400000008 /* Actrail Watch App */,
+				A1B2C3D40000000C /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		A1B2C3D4000000000000DD02 /* Actrail */ = {
+		A1B2C3D40000000C /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A1B2C3D4000000000000BB01 /* ActrailApp.swift */,
-				A1B2C3D4000000000000BB02 /* ContentView.swift */,
-				A1B2C3D4000000000000BB10 /* Info.plist */,
-				A1B2C3D4000000000000BB03 /* Assets.xcassets */,
-				A1B2C3D4000000000000BB04 /* Preview Assets.xcassets */,
-				A1B2C3D4000000000000DD03 /* Models */,
-				A1B2C3D4000000000000DD04 /* ViewModels */,
-				A1B2C3D4000000000000DD05 /* Views */,
-				A1B2C3D4000000000000DD06 /* Extensions */,
-				A1B2C3D4000000000000DD07 /* Services */,
-				403BEC2C866E6E2E2E551D0C /* WatchApp */,
-			);
-			path = Actrail;
-			sourceTree = "<group>";
-		};
-		A1B2C3D4000000000000DD03 /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4000000000000BB05 /* Activity.swift */,
-			);
-			path = Models;
-			sourceTree = "<group>";
-		};
-		A1B2C3D4000000000000DD04 /* ViewModels */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4000000000000BB06 /* ActivityViewModel.swift */,
-			);
-			path = ViewModels;
-			sourceTree = "<group>";
-		};
-		A1B2C3D4000000000000DD05 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4000000000000BB08 /* MainTabView.swift */,
-				A1B2C3D4000000000000BB09 /* HomeView.swift */,
-				A1B2C3D4000000000000BB0A /* ActivityListView.swift */,
-				A1B2C3D4000000000000BB0B /* StatisticsView.swift */,
-				A1B2C3D4000000000000BB0C /* SettingsView.swift */,
-				A1B2C3D4000000000000BB0D /* AddActivityTypeView.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
-		A1B2C3D4000000000000DD06 /* Extensions */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4000000000000BB07 /* Color+Hex.swift */,
-			);
-			path = Extensions;
-			sourceTree = "<group>";
-		};
-		A1B2C3D4000000000000DD07 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4000000000000BB0E /* WatchSyncManager.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
-		403BEC2C866E6E2E2E551D0C /* WatchApp */ = {
-			isa = PBXGroup;
-			children = (
-				EBDAB1B91D80F12A3D695AC9 /* WatchApp.swift */,
-				CEEE2D0F76FDC63C1E141595 /* WatchContentView.swift */,
-				2BD682B6F52D9251D1BDF7A9 /* WatchActivityViewModel.swift */,
-				E2C0C054A705D60C97C9B08B /* WatchSyncManager.swift */,
-				EDB8F79D92F98DD276934D13 /* WatchColor+Hex.swift */,
-			);
-			path = WatchApp;
-			sourceTree = "<group>";
-		};
-		A1B2C3D4000000000000DD08 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				A1B2C3D4000000000000BB0F /* Actrail.app */,
-				012A72BD71DCA6466B8633AE /* Actrail Watch App.app */,
+				A1B2C3D400000005 /* Actrail.app */,
+				A1B2C3D400000002 /* Actrail Watch App.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -191,160 +91,128 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A1B2C3D4000000000000AA22 /* Actrail */ = {
+		A1B2C3D40000000D /* Actrail */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A1B2C3D4000000000000AA66 /* Build configuration list for PBXNativeTarget "Actrail" */;
+			buildConfigurationList = A1B2C3D400000012 /* Build configuration list for PBXNativeTarget "Actrail" */;
 			buildPhases = (
-				A1B2C3D4000000000000AA33 /* Sources */,
-				A1B2C3D4000000000000AA44 /* Frameworks */,
-				A1B2C3D4000000000000AA55 /* Resources */,
-				D69571C117AA9E38D9475862 /* Embed Foundation Extensions */,
+				A1B2C3D40000001C /* Sources */,
+				A1B2C3D400000009 /* Frameworks */,
+				A1B2C3D400000004 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				86D53CFF3FEDA36554E94020 /* PBXTargetDependency */,
+				A1B2C3D40000001B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A1B2C3D400000007 /* Actrail */,
 			);
 			name = Actrail;
 			productName = Actrail;
-			productReference = A1B2C3D4000000000000BB0F /* Actrail.app */;
+			productReference = A1B2C3D400000005 /* Actrail.app */;
 			productType = "com.apple.product-type.application";
 		};
-		BAD1CB9C3A4878D0ACB9A3EF /* Actrail Watch App */ = {
+		A1B2C3D400000006 /* Actrail Watch App */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 085E5393F4FE4AE0B44F029D /* Build configuration list for PBXNativeTarget "Actrail Watch App" */;
+			buildConfigurationList = A1B2C3D400000014 /* Build configuration list for PBXNativeTarget "Actrail Watch App" */;
 			buildPhases = (
-				CA3D63FBAC3F8030FAFDBC02 /* Sources */,
-				0B31BE754647B8897F37E9BE /* Frameworks */,
-				EE95B7576034F5069DE642F0 /* Resources */,
+				A1B2C3D40000001D /* Sources */,
+				A1B2C3D40000000A /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				A1B2C3D400000008 /* Actrail Watch App */,
+			);
 			name = "Actrail Watch App";
 			productName = "Actrail Watch App";
-			productReference = 012A72BD71DCA6466B8633AE /* Actrail Watch App.app */;
+			productReference = A1B2C3D400000002 /* Actrail Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		A1B2C3D4000000000000AA11 /* Project object */ = {
+		A1B2C3D400000010 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1540;
-				LastUpgradeCheck = 1540;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
-					A1B2C3D4000000000000AA22 = {
-						CreatedOnToolsVersion = 15.4;
-						LastSwiftMigration = 1540;
-						TestTargetID = BAD1CB9C3A4878D0ACB9A3EF;
+					A1B2C3D40000000D = {
+						CreatedOnToolsVersion = 26.6;
 					};
-					BAD1CB9C3A4878D0ACB9A3EF = {
-						CreatedOnToolsVersion = 15.4;
-						LastSwiftMigration = 1540;
-						TestTargetID = A1B2C3D4000000000000AA22;
+					A1B2C3D400000006 = {
+						CreatedOnToolsVersion = 26.6;
 					};
 				};
 			};
-			buildConfigurationList = A1B2C3D4000000000000AA99 /* Build configuration list for PBXProject "Actrail" */;
-			compatibilityVersion = "Xcode 14.0";
+			buildConfigurationList = A1B2C3D400000011 /* Build configuration list for PBXProject "Actrail" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = A1B2C3D4000000000000DD01 /* Root */;
-			productRefGroup = A1B2C3D4000000000000DD08 /* Products */;
+			mainGroup = A1B2C3D40000000B;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A1B2C3D40000000C /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A1B2C3D4000000000000AA22 /* Actrail */,
-				BAD1CB9C3A4878D0ACB9A3EF /* Actrail Watch App */,
+				A1B2C3D40000000D /* Actrail */,
+				A1B2C3D400000006 /* Actrail Watch App */,
 			);
 		};
 /* End PBXProject section */
 
-/* Begin PBXResourcesBuildPhase section */
-		A1B2C3D4000000000000AA55 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				A1B2C3D4000000000000CC03 /* Assets.xcassets in Resources */,
-				A1B2C3D4000000000000CC04 /* Preview Assets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
+/* Begin PBXTargetDependency section */
+		A1B2C3D40000001B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B2C3D400000006 /* Actrail Watch App */;
+			targetProxy = A1B2C3D400000003 /* PBXContainerItemProxy */;
 		};
-		EE95B7576034F5069DE642F0 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXResourcesBuildPhase section */
+/* End PBXTargetDependency section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A1B2C3D4000000000000AA33 /* Sources */ = {
+		A1B2C3D40000001C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1B2C3D4000000000000CC01 /* ActrailApp.swift in Sources */,
-				A1B2C3D4000000000000CC02 /* ContentView.swift in Sources */,
-				A1B2C3D4000000000000CC05 /* Activity.swift in Sources */,
-				A1B2C3D4000000000000CC06 /* ActivityViewModel.swift in Sources */,
-				A1B2C3D4000000000000CC07 /* Color+Hex.swift in Sources */,
-				A1B2C3D4000000000000CC08 /* MainTabView.swift in Sources */,
-				A1B2C3D4000000000000CC09 /* HomeView.swift in Sources */,
-				A1B2C3D4000000000000CC0A /* ActivityListView.swift in Sources */,
-				A1B2C3D4000000000000CC0B /* StatisticsView.swift in Sources */,
-				A1B2C3D4000000000000CC0C /* SettingsView.swift in Sources */,
-				A1B2C3D4000000000000CC0D /* AddActivityTypeView.swift in Sources */,
-				A1B2C3D4000000000000CC0E /* WatchSyncManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		CA3D63FBAC3F8030FAFDBC02 /* Sources */ = {
+		A1B2C3D40000001D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				361085FC71ED824FC904BFE7 /* WatchApp.swift in Sources */,
-				BC01249D77B07EFEB2B30189 /* WatchContentView.swift in Sources */,
-				6EC7A1A1808C1D3FBA5BE229 /* WatchActivityViewModel.swift in Sources */,
-				DB10B7A108CE417454BD288B /* WatchSyncManager.swift in Sources */,
-				55836189C09CAA1CEC137E60 /* WatchColor+Hex.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXTargetDependency section */
-		86D53CFF3FEDA36554E94020 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = BAD1CB9C3A4878D0ACB9A3EF /* Actrail Watch App */;
-			targetProxy = 5B54E7E64D1286A4EEDDD07F /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin XCBuildConfiguration section */
-		A1B2C3D4000000000000AAAA /* Debug */ = {
+		A1B2C3D400000015 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INFINITE_RECURSION = YES;
@@ -357,10 +225,12 @@
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 9WDTRCX4KN;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -378,6 +248,8 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -387,21 +259,24 @@
 			};
 			name = Debug;
 		};
-		A1B2C3D4000000000000AAAB /* Release */ = {
+		A1B2C3D400000016 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
 				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_INFINITE_RECURSION = YES;
@@ -414,10 +289,12 @@
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 9WDTRCX4KN;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -429,6 +306,8 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -437,17 +316,22 @@
 			};
 			name = Release;
 		};
-		A1B2C3D4000000000000AA77 /* Debug */ = {
+		A1B2C3D400000017 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9WDTRCX4KN;
-				INFOPLIST_FILE = Actrail/Info.plist;
-				INFOPLIST_KEY_WKAppBundleIdentifier = com.actrail.app.watchkitapp;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "行迹";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -455,25 +339,29 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.actrail.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		A1B2C3D4000000000000AA88 /* Release */ = {
+		A1B2C3D400000018 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9WDTRCX4KN;
-				INFOPLIST_FILE = Actrail/Info.plist;
-				INFOPLIST_KEY_WKAppBundleIdentifier = com.actrail.app.watchkitapp;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "行迹";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -481,102 +369,99 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.actrail.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
-		4B609C0C89FAFB5724E69536 /* Debug */ = {
+		A1B2C3D400000019 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9WDTRCX4KN;
+				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "\U884C\U8FF9";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.actrail.app;
+				INFOPLIST_KEY_CFBundleDisplayName = "行迹";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.actrail.app;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.actrail.app.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 9.1;
+				WATCHOS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Debug;
 		};
-		46191152224C7CDBF4514C5C /* Release */ = {
+		A1B2C3D40000001A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 9WDTRCX4KN;
+				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "\U884C\U8FF9";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.actrail.app;
+				INFOPLIST_KEY_CFBundleDisplayName = "行迹";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.actrail.app;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.actrail.app.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 9.1;
+				WATCHOS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1B2C3D4000000000000AA66 /* Build configuration list for PBXNativeTarget "Actrail" */ = {
+		A1B2C3D400000011 /* Build configuration list for PBXProject "Actrail" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A1B2C3D4000000000000AA77 /* Debug */,
-				A1B2C3D4000000000000AA88 /* Release */,
+				A1B2C3D400000015 /* Debug */,
+				A1B2C3D400000016 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		085E5393F4FE4AE0B44F029D /* Build configuration list for PBXNativeTarget "Actrail Watch App" */ = {
+		A1B2C3D400000012 /* Build configuration list for PBXNativeTarget "Actrail" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				4B609C0C89FAFB5724E69536 /* Debug */,
-				46191152224C7CDBF4514C5C /* Release */,
+				A1B2C3D400000017 /* Debug */,
+				A1B2C3D400000018 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A1B2C3D4000000000000AA99 /* Build configuration list for PBXProject "Actrail" */ = {
+		A1B2C3D400000014 /* Build configuration list for PBXNativeTarget "Actrail Watch App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A1B2C3D4000000000000AAAA /* Debug */,
-				A1B2C3D4000000000000AAAB /* Release */,
+				A1B2C3D400000019 /* Debug */,
+				A1B2C3D40000001A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -584,5 +469,5 @@
 /* End XCConfigurationList section */
 
 	};
-	rootObject = A1B2C3D4000000000000AA11 /* Project object */;
+	rootObject = A1B2C3D400000010 /* Project object */;
 }

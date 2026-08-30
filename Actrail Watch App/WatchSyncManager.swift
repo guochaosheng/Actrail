@@ -47,6 +47,12 @@ class WatchSyncManager: NSObject, ObservableObject, WCSessionDelegate {
         self.onDataUpdate = handler
     }
     
+    func loadApplicationContextData() -> Data? {
+        guard let session = session else { return nil }
+        let context = session.applicationContext
+        return context["activityData"] as? Data
+    }
+    
     func requestDataFromiPhone() {
         guard let session = session else {
             print("[Watch Sync] No session available")

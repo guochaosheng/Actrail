@@ -68,19 +68,20 @@ class WatchSyncManager: NSObject, ObservableObject, WCSessionDelegate {
         let userInfo: [String: Any] = ["activityData": data]
         
         if session.isReachable {
-            // 前台实时发送
+            // 前台可达：先 sendMessage 实时送达，失败时有 transferUserInfo 兜底
             session.sendMessage(userInfo, replyHandler: { reply in
                 print("[iPhone Sync] sendMessage succeeded: \(reply)")
             }, errorHandler: { error in
-                print("[iPhone Sync] sendMessage failed: \(error), falling back to transferUserInfo")
-                session.transferUserInfo(userInfo)
+                print("[iPhone Sync] sendMessage failed: \(error), transferUserInfo will deliver")
             })
-            print("[iPhone Sync] sendMessage sent (reachable)")
+            print("[iPhone Sync] sendMessage sent (types=\(types.count), active=\(activeRecords.count))")
         } else {
-            // 后台排队发送
-            session.transferUserInfo(userInfo)
-            print("[iPhone Sync] transferUserInfo queued")
+            print("[iPhone Sync] not reachable, using transferUserInfo")
         }
+        
+        // 始终用 transferUserInfo 保证后台也能送达
+        session.transferUserInfo(userInfo)
+        print("[iPhone Sync] transferUserInfo queued")
         
         lastSyncDate = Date()
     }

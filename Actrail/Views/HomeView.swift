@@ -9,6 +9,22 @@ struct HomeView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
+                    HStack(alignment: .lastTextBaseline, spacing: 6) {
+                        Text("行迹")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(viewModel.isWatchReachable ? .green : .orange)
+                                .frame(width: 7, height: 7)
+                            Text(viewModel.isWatchReachable ? "已连接" : "未连接")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+
                     // 正在进行的活动
                     if !viewModel.activeRecords.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
@@ -55,7 +71,6 @@ struct HomeView: View {
                 }
                 .padding(.vertical)
             }
-            .navigationTitle("行迹")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingAddActivity = true }) {
