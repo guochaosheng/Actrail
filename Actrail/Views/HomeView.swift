@@ -9,86 +9,87 @@ struct HomeView: View {
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    HStack(alignment: .lastTextBaseline, spacing: 6) {
-                        Text("行迹")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(viewModel.isWatchReachable ? .green : .orange)
-                                .frame(width: 7, height: 7)
-                            Text(viewModel.isWatchReachable ? "已连接" : "未连接")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+            List {
+                // 标题行
+                HStack(alignment: .lastTextBaseline, spacing: 6) {
+                    Text("行迹")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(viewModel.isWatchReachable ? .green : .orange)
+                            .frame(width: 7, height: 7)
+                        Text(viewModel.isWatchReachable ? "已连接" : "未连接")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                    // 正在进行的活动
-                    if !viewModel.activeRecords.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("正在进行")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                            
-                            ForEach(viewModel.activeRecords) { record in
-                                ActiveActivityCard(viewModel: viewModel, record: record)
-                            }
+                // 正在进行的活动
+                if !viewModel.activeRecords.isEmpty {
+                    Section {
+                        ForEach(viewModel.activeRecords) { record in
+                            ActiveActivityCard(viewModel: viewModel, record: record)
                         }
-                        .padding(.horizontal)
-                    }
-                    
-                    // 活动类型网格
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("开始新活动")
+                    } header: {
+                        Text("正在进行")
                             .font(.headline)
                             .foregroundColor(.secondary)
-                        
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 16) {
-                            ForEach(viewModel.activityTypes) { type in
-                                ActivityTypeButton(type: type) {
-                                    viewModel.startActivity(type)
-                                }
-                            }
-                        }
                     }
-                    .padding(.horizontal)
-                    
-                    // 活动提醒
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("活动提醒")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Button(action: { showingAddReminder = true }) {
-                                Image(systemName: "plus.circle.fill")
-                                    .foregroundColor(.blue)
-                            }
-                        }
-
-                        if viewModel.reminders.isEmpty {
-                            Text("暂无提醒")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, minHeight: 60)
-                        } else {
-                            ForEach(viewModel.reminders) { reminder in
-                                ReminderRow(reminder: reminder, viewModel: viewModel)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
                 }
-                .padding(.vertical)
+                
+                // 活动类型网格
+                Section {
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: 16) {
+                        ForEach(viewModel.activityTypes) { type in
+                            ActivityTypeButton(type: type) {
+                                viewModel.startActivity(type)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("开始新活动")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+                
+                // 活动提醒
+                Section {
+                    if viewModel.reminders.isEmpty {
+                        Text("暂无提醒")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                    } else {
+                        ForEach(viewModel.reminders) { reminder in
+                            ReminderRow(reminder: reminder, viewModel: viewModel)
+                        }
+                        .onDelete { offsets in
+                            for index in offsets {
+                                viewModel.deleteReminder(viewModel.reminders[index])
+                            }
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("活动提醒")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button(action: { showingAddReminder = true }) {
+                            Image(systemName: "plus.circle.fill")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
             }
+            .listStyle(.plain)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showingTypeManage = true }) {
@@ -184,7 +185,6 @@ struct ActivityTypeButton: View {
 struct ReminderRow: View {
     let reminder: ActivityReminder
     @Bindable var viewModel: ActivityViewModel
-    @State private var showingDeleteConfirm = false
 
     var body: some View {
         HStack {
@@ -213,13 +213,6 @@ struct ReminderRow: View {
             .labelsHidden()
         }
         .padding(.vertical, 4)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) {
-                viewModel.deleteReminder(reminder)
-            } label: {
-                Label("删除", systemImage: "trash")
-            }
-        }
     }
 }
 

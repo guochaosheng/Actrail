@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 @main
 struct ActrailApp: App {
@@ -11,6 +12,7 @@ struct ActrailApp: App {
             ContentView(viewModel: viewModel)
                 .onAppear {
                     syncManager.startSession()
+                    viewModel.setupNotifications()
                 }
         }
         .modelContainer(for: [ActivityType.self, ActivityRecord.self, ActivityReminder.self])

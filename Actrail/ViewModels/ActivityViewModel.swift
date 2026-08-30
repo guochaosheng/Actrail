@@ -3,6 +3,12 @@ import SwiftData
 import SwiftUI
 import UserNotifications
 
+class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .badge, .sound])
+    }
+}
+
 @Observable
 class ActivityViewModel {
     var activityTypes: [ActivityType] = []
@@ -15,6 +21,7 @@ class ActivityViewModel {
     private var modelContext: ModelContext?
     private let syncManager = WatchSyncManager.shared
     private var syncTimer: Timer?
+    private let notificationDelegate = NotificationDelegate()
 
     private var cachedTypes: [WatchSyncManager.SyncedActivityType] = []
     private var cachedActiveRecords: [WatchSyncManager.SyncedActivityRecord] = []
@@ -32,8 +39,7 @@ class ActivityViewModel {
         }
 
         setupSyncManager()
-        setupNotifications()
-        requestNotificationPermission()
+        setupNotificationObservers()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.rebuildCache()
@@ -41,12 +47,22 @@ class ActivityViewModel {
         }
     }
 
-    private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+    func setupNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = notificationDelegate
+        center.requestAuthorization(options: [.alert, .badge, .sound]) { [weak self] granted, _ in
             if granted {
-                print("[Reminder] notification permission granted")
-            } else {
-                print("[Reminder] notification permission denied")
+                DispatchQueue.main.async {
+                    self?.rescheduleAllReminders()
+                }
+            }
+        }
+    }
+
+    private func rescheduleAllReminders() {
+        for reminder in reminders {
+            if reminder.isEnabled {
+                scheduleNotification(for: reminder)
             }
         }
     }
@@ -75,7 +91,7 @@ class ActivityViewModel {
         }
     }
 
-    private func setupNotifications() {
+    private func setupNotificationObservers() {
         NotificationCenter.default.addObserver(
             forName: .watchRequestedData, object: nil, queue: .main
         ) { [weak self] _ in
@@ -332,6 +348,13 @@ class ActivityViewModel {
             try context.save()
             fetchReminders()
             scheduleNotification(for: reminder)
+
+            let content = UNMutableNotificationContent()
+            content.title = "行迹"
+            content.body = "提醒已设置：\(reminder.timeString) \(activityType.name)"
+            content.sound = .default
+            let testRequest = UNNotificationRequest(identifier: "test-\(reminder.id)", content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(testRequest)
         } catch {
             print("Failed to save reminder: \(error)")
         }
@@ -368,19 +391,28 @@ class ActivityViewModel {
 
     private func scheduleNotification(for reminder: ActivityReminder) {
         guard reminder.isEnabled, let type = reminder.activityType else { return }
+
         let content = UNMutableNotificationContent()
-        content.title = "活动提醒"
+        content.title = "行迹提醒"
         content.body = "该开始\(type.name)了"
         content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.categoryIdentifier = "ACTIVITY_REMINDER"
 
+        let calendar = Calendar.current
         var dateComponents = DateComponents()
+        dateComponents.calendar = calendar
         dateComponents.hour = reminder.hour
         dateComponents.minute = reminder.minute
 
         let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
         let request = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
 
-        UNUserNotificationCenter.current().add(request)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("[Reminder] schedule failed: \(error)")
+            }
+        }
     }
 
     private func cancelNotification(for reminder: ActivityReminder) {
