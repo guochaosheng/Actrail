@@ -21,6 +21,26 @@ enum ReminderType: Int, Codable, CaseIterable {
         case .vibrationWithLongPress: return "lock.fill"
         }
     }
+
+    static let defaultsKey = "reminderTypes"
+
+    static func save(type: ReminderType, for reminderId: UUID) {
+        var dict = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: Int] ?? [:]
+        dict[reminderId.uuidString] = type.rawValue
+        UserDefaults.standard.set(dict, forKey: defaultsKey)
+    }
+
+    static func load(for reminderId: UUID) -> ReminderType {
+        let dict = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: Int] ?? [:]
+        guard let raw = dict[reminderId.uuidString] else { return .notification }
+        return ReminderType(rawValue: raw) ?? .notification
+    }
+
+    static func remove(for reminderId: UUID) {
+        var dict = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: Int] ?? [:]
+        dict.removeValue(forKey: reminderId.uuidString)
+        UserDefaults.standard.set(dict, forKey: defaultsKey)
+    }
 }
 
 @Model
@@ -92,25 +112,19 @@ final class ActivityReminder {
     var minute: Int
     var isEnabled: Bool
     var repeatDays: [Int]
-    var reminderTypeRaw: Int
     var createdAt: Date
 
-    init(activityType: ActivityType, hour: Int, minute: Int, repeatDays: [Int] = [1,2,3,4,5,6,7], reminderType: ReminderType = .notification) {
+    init(activityType: ActivityType, hour: Int, minute: Int, repeatDays: [Int] = [1,2,3,4,5,6,7]) {
         self.id = UUID()
         self.activityType = activityType
         self.hour = hour
         self.minute = minute
         self.isEnabled = true
         self.repeatDays = repeatDays
-        self.reminderTypeRaw = reminderType.rawValue
         self.createdAt = Date()
     }
 
     var timeString: String {
         String(format: "%02d:%02d", hour, minute)
-    }
-
-    var currentReminderType: ReminderType {
-        ReminderType(rawValue: reminderTypeRaw) ?? .notification
     }
 }

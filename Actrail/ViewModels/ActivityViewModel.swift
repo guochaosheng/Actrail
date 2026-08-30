@@ -115,12 +115,13 @@ class ActivityViewModel {
         guard modelContext != nil else { return }
         guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
 
-        if reminder.currentReminderType == .vibration || reminder.currentReminderType == .vibrationWithLongPress {
+        let reminderType = ReminderType.load(for: reminder.id)
+        if reminderType == .vibration || reminderType == .vibrationWithLongPress {
             startContinuousVibration()
             activeVibrationAlert = VibrationAlert(
                 reminder: reminder,
                 activityName: reminder.activityType?.name ?? "未知活动",
-                reminderType: reminder.currentReminderType
+                reminderType: reminderType
             )
         }
     }
@@ -131,12 +132,13 @@ class ActivityViewModel {
         let identifier = rawIdentifier.replacingOccurrences(of: "-repeat", with: "")
         guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
 
-        if reminder.currentReminderType == .vibration || reminder.currentReminderType == .vibrationWithLongPress {
+        let reminderType = ReminderType.load(for: reminder.id)
+        if reminderType == .vibration || reminderType == .vibrationWithLongPress {
             startContinuousVibration()
             activeVibrationAlert = VibrationAlert(
                 reminder: reminder,
                 activityName: reminder.activityType?.name ?? "未知活动",
-                reminderType: reminder.currentReminderType
+                reminderType: reminderType
             )
         }
     }
@@ -484,11 +486,12 @@ class ActivityViewModel {
 
     func addReminder(activityType: ActivityType, hour: Int, minute: Int, reminderType: ReminderType = .notification) {
         guard let context = modelContext else { return }
-        let reminder = ActivityReminder(activityType: activityType, hour: hour, minute: minute, reminderType: reminderType)
+        let reminder = ActivityReminder(activityType: activityType, hour: hour, minute: minute)
         context.insert(reminder)
 
         do {
             try context.save()
+            ReminderType.save(type: reminderType, for: reminder.id)
             fetchReminders()
             scheduleNotification(for: reminder)
         } catch {
@@ -500,6 +503,7 @@ class ActivityViewModel {
     func deleteReminder(_ reminder: ActivityReminder) {
         guard let context = modelContext else { return }
         cancelNotification(for: reminder)
+        ReminderType.remove(for: reminder.id)
         context.delete(reminder)
 
         do {
@@ -528,6 +532,7 @@ class ActivityViewModel {
 
     private func scheduleNotification(for reminder: ActivityReminder) {
         guard reminder.isEnabled, let type = reminder.activityType else { return }
+        let reminderType = ReminderType.load(for: reminder.id)
 
         let content = UNMutableNotificationContent()
         content.title = "行迹提醒"
@@ -541,7 +546,7 @@ class ActivityViewModel {
         dateComponents.hour = reminder.hour
         dateComponents.minute = reminder.minute
 
-        switch reminder.currentReminderType {
+        switch reminderType {
         case .notification:
             content.sound = .default
             content.interruptionLevel = .timeSensitive
