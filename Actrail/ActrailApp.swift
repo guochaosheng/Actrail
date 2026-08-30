@@ -12,7 +12,6 @@ struct ActrailApp: App {
             ContentView(viewModel: viewModel)
                 .onAppear {
                     syncManager.startSession()
-                    viewModel.setupNotifications()
                 }
         }
         .modelContainer(for: [ActivityType.self, ActivityRecord.self, ActivityReminder.self])

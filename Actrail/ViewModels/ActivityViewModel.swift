@@ -47,6 +47,7 @@ class ActivityViewModel {
     private let notificationDelegate = NotificationDelegate()
     private var hapticEngine: CHHapticEngine?
     private var hapticPlayer: CHHapticAdvancedPatternPlayer?
+    private var isAppReady = false
 
     private var cachedTypes: [WatchSyncManager.SyncedActivityType] = []
     private var cachedActiveRecords: [WatchSyncManager.SyncedActivityRecord] = []
@@ -72,10 +73,15 @@ class ActivityViewModel {
 
         setupSyncManager()
         setupNotificationObservers()
+        setupNotifications()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.rebuildCache()
             self?.sendSync()
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.isAppReady = true
         }
     }
 
@@ -104,6 +110,7 @@ class ActivityViewModel {
     }
 
     private func handleNotificationFired(_ notification: UNNotification) {
+        guard isAppReady else { return }
         let rawIdentifier = notification.request.identifier
         let identifier = rawIdentifier.replacingOccurrences(of: "-repeat", with: "")
         guard modelContext != nil else { return }
@@ -120,9 +127,9 @@ class ActivityViewModel {
     }
 
     private func handleNotificationOpened(_ response: UNNotificationResponse) {
+        guard isAppReady, modelContext != nil else { return }
         let rawIdentifier = response.notification.request.identifier
         let identifier = rawIdentifier.replacingOccurrences(of: "-repeat", with: "")
-        guard modelContext != nil else { return }
         guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
 
         if reminder.reminderType == .vibration || reminder.reminderType == .vibrationWithLongPress {
@@ -223,6 +230,7 @@ class ActivityViewModel {
             forName: .watchRequestedData, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                guard self?.isAppReady == true else { return }
                 self?.rebuildCache()
                 self?.sendSync()
             }
@@ -232,6 +240,7 @@ class ActivityViewModel {
             forName: .watchDidBecomeReachable, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
+                guard self?.isAppReady == true else { return }
                 self?.rebuildCache()
                 self?.sendSync()
             }
@@ -552,8 +561,8 @@ class ActivityViewModel {
             }
 
         case .vibration, .vibrationWithLongPress:
-            content.sound = UNNotificationSound.defaultCritical
-            content.interruptionLevel = .critical
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
 
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
             let mainRequest = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
@@ -566,8 +575,8 @@ class ActivityViewModel {
             var repeatContent = UNMutableNotificationContent()
             repeatContent.title = "行迹提醒"
             repeatContent.body = "该开始\(type.name)了！"
-            repeatContent.sound = UNNotificationSound.defaultCritical
-            repeatContent.interruptionLevel = .critical
+            repeatContent.sound = .default
+            repeatContent.interruptionLevel = .timeSensitive
             repeatContent.badge = 1
             repeatContent.userInfo = ["reminderId": reminder.id.uuidString, "isRepeating": true]
 
