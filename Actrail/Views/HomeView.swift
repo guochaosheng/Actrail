@@ -200,15 +200,13 @@ struct ReminderRow: View {
 
     var body: some View {
         HStack {
-            if let type = reminder.activityType {
-                Image(systemName: type.iconName)
-                    .foregroundColor(Color(hex: type.color))
-                    .frame(width: 30)
-            }
+            Image(systemName: reminder.activityIconName)
+                .foregroundColor(Color(hex: reminder.activityColor))
+                .frame(width: 30)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(reminder.activityType?.name ?? "未知活动")
+                    Text(reminder.activityName)
                         .font(.subheadline)
                     Text("·")
                         .foregroundColor(.secondary)
@@ -376,6 +374,10 @@ struct AddReminderView: View {
     @State private var hour = 9
     @State private var minute = 0
     @State private var selectedReminderType: ReminderType = .notification
+    @State private var cachedTypeId: UUID?
+    @State private var cachedTypeName: String = ""
+    @State private var cachedTypeIcon: String = ""
+    @State private var cachedTypeColor: String = ""
 
     var body: some View {
         NavigationView {
@@ -392,6 +394,9 @@ struct AddReminderView: View {
                         }
                     }
                     .pickerStyle(.wheel)
+                    .onChange(of: selectedTypeIndex) { newIndex in
+                        cacheSelectedType(newIndex)
+                    }
                 }
 
                 Section("提醒时间") {
@@ -450,7 +455,7 @@ struct AddReminderView: View {
                             Spacer()
                         }
                     }
-                    .disabled(viewModel.activityTypes.isEmpty)
+                    .disabled(cachedTypeId == nil)
                 }
             }
             .navigationTitle("添加提醒")
@@ -460,7 +465,19 @@ struct AddReminderView: View {
                     Button("取消") { dismiss() }
                 }
             }
+            .onAppear {
+                cacheSelectedType(selectedTypeIndex)
+            }
         }
+    }
+
+    private func cacheSelectedType(_ index: Int) {
+        guard index < viewModel.activityTypes.count else { return }
+        let type = viewModel.activityTypes[index]
+        cachedTypeId = type.id
+        cachedTypeName = type.name
+        cachedTypeIcon = type.iconName
+        cachedTypeColor = type.color
     }
 
     func reminderTypeDescription(_ type: ReminderType) -> String {
@@ -475,9 +492,12 @@ struct AddReminderView: View {
     }
 
     func saveReminder() {
-        guard selectedTypeIndex < viewModel.activityTypes.count else { return }
+        guard let typeId = cachedTypeId else { return }
         viewModel.addReminder(
-            activityType: viewModel.activityTypes[selectedTypeIndex],
+            activityTypeId: typeId,
+            activityName: cachedTypeName,
+            activityIconName: cachedTypeIcon,
+            activityColor: cachedTypeColor,
             hour: hour,
             minute: minute,
             reminderType: selectedReminderType

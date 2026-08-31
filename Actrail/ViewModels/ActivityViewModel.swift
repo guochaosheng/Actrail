@@ -53,11 +53,15 @@ class ActivityViewModel {
     private var cachedActiveRecords: [WatchSyncManager.SyncedActivityRecord] = []
     private var cachedCompletedRecords: [WatchSyncManager.SyncedActivityRecord] = []
 
+    private var safeTypeValues: [(id: UUID, name: String, iconName: String, color: String, group: String)] = []
+    private var safeRecordValues: [(id: UUID, activityTypeId: UUID, startTime: Date, endTime: Date?, isActive: Bool, note: String)] = []
+
     struct VibrationAlert: Identifiable {
         let id = UUID()
         let reminder: ActivityReminder
         let activityName: String
         let reminderType: ReminderType
+        let notificationIdentifier: String
     }
 
     func setModelContext(_ context: ModelContext) {
@@ -106,52 +110,98 @@ class ActivityViewModel {
                 self?.handleNotificationOpened(response)
             }
         }
+
+        if #available(iOS 26.0, *) {
+            Task {
+                let authorized = await AlarmKitManager.shared.ensureAuthorized()
+                print("[ViewModel] AlarmKit authorization: \(authorized)")
+            }
+        }
+    }
+
+    private func cleanNotificationIdentifier(_ raw: String) -> String {
+        var id = raw.replacingOccurrences(of: "-repeat", with: "")
+        if let dashRange = id.range(of: "-r"), id[dashRange.upperBound...].allSatisfy(\.isNumber) {
+            id = String(id[id.startIndex..<dashRange.lowerBound])
+        }
+        return id
     }
 
     private func handleNotificationFired(_ notification: UNNotification) {
         guard isAppReady else { return }
-        let rawIdentifier = notification.request.identifier
-        let identifier = rawIdentifier.replacingOccurrences(of: "-repeat", with: "")
-        guard modelContext != nil else { return }
-        guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
+        let identifier = cleanNotificationIdentifier(notification.request.identifier)
+        let userInfo = notification.request.content.userInfo
 
+        if let reminderTypeRaw = userInfo["reminderType"] as? Int,
+           let reminderType = ReminderType(rawValue: reminderTypeRaw) {
+            let activityName = userInfo["activityName"] as? String ?? "活动"
+            startContinuousVibration()
+            activeVibrationAlert = VibrationAlert(
+                reminder: ActivityReminder(activityTypeId: UUID(), activityName: activityName, activityIconName: "bell.fill", activityColor: "#FF3B30", hour: 0, minute: 0),
+                activityName: activityName,
+                reminderType: reminderType,
+                notificationIdentifier: identifier
+            )
+            return
+        }
+
+        guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
         let reminderType = ReminderType.load(for: reminder.id)
         if reminderType == .vibration || reminderType == .vibrationWithLongPress {
             startContinuousVibration()
             activeVibrationAlert = VibrationAlert(
                 reminder: reminder,
-                activityName: reminder.activityType?.name ?? "未知活动",
-                reminderType: reminderType
+                activityName: reminder.activityName,
+                reminderType: reminderType,
+                notificationIdentifier: identifier
             )
         }
     }
 
     private func handleNotificationOpened(_ response: UNNotificationResponse) {
-        guard isAppReady, modelContext != nil else { return }
-        let rawIdentifier = response.notification.request.identifier
-        let identifier = rawIdentifier.replacingOccurrences(of: "-repeat", with: "")
-        guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
+        guard isAppReady else { return }
+        let identifier = cleanNotificationIdentifier(response.notification.request.identifier)
+        let userInfo = response.notification.request.content.userInfo
 
+        if let reminderTypeRaw = userInfo["reminderType"] as? Int,
+           let reminderType = ReminderType(rawValue: reminderTypeRaw) {
+            let activityName = userInfo["activityName"] as? String ?? "活动"
+            startContinuousVibration()
+            activeVibrationAlert = VibrationAlert(
+                reminder: ActivityReminder(activityTypeId: UUID(), activityName: activityName, activityIconName: "bell.fill", activityColor: "#FF3B30", hour: 0, minute: 0),
+                activityName: activityName,
+                reminderType: reminderType,
+                notificationIdentifier: identifier
+            )
+            return
+        }
+
+        guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
         let reminderType = ReminderType.load(for: reminder.id)
         if reminderType == .vibration || reminderType == .vibrationWithLongPress {
             startContinuousVibration()
             activeVibrationAlert = VibrationAlert(
                 reminder: reminder,
-                activityName: reminder.activityType?.name ?? "未知活动",
-                reminderType: reminderType
+                activityName: reminder.activityName,
+                reminderType: reminderType,
+                notificationIdentifier: identifier
             )
         }
     }
 
     func startContinuousVibration() {
-        stopVibration()
+        stopHapticsOnly()
 
         if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
             do {
                 let engine = try CHHapticEngine()
                 try engine.start()
 
-                engine.stoppedHandler = { _ in }
+                engine.stoppedHandler = { [weak self] _ in
+                    DispatchQueue.main.async {
+                        self?.startSystemVibrationLoop()
+                    }
+                }
 
                 let pattern = try CHHapticPattern(events: [
                     CHHapticEvent(eventType: .hapticContinuous, parameters: [
@@ -165,18 +215,26 @@ class ActivityViewModel {
                 hapticPlayer = player
                 hapticEngine = engine
             } catch {
-                startSystemVibration()
+                startSystemVibrationLoop()
             }
         } else {
-            startSystemVibration()
+            startSystemVibrationLoop()
         }
     }
 
-    private func startSystemVibration() {
+    private var vibrationTimer: Timer?
+
+    private func startSystemVibrationLoop() {
+        vibrationTimer?.invalidate()
+        vibrationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+        }
         AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
     }
 
-    func stopVibration() {
+    private func stopHapticsOnly() {
+        vibrationTimer?.invalidate()
+        vibrationTimer = nil
         if let player = hapticPlayer {
             try? player.stop(atTime: CHHapticTimeImmediate)
             hapticPlayer = nil
@@ -185,8 +243,17 @@ class ActivityViewModel {
             try? engine.stop()
             hapticEngine = nil
         }
+    }
+
+    func stopVibration() {
+        stopHapticsOnly()
         if let alert = activeVibrationAlert {
-            cancelNotification(for: alert.reminder)
+            var identifiers = [alert.notificationIdentifier]
+            for i in 1...10 {
+                identifiers.append("\(alert.notificationIdentifier)-r\(i)")
+            }
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
         }
         activeVibrationAlert = nil
     }
@@ -259,49 +326,16 @@ class ActivityViewModel {
     // MARK: - Cache
 
     private func rebuildCache() {
-        guard modelContext != nil else { return }
-        do {
-            cachedTypes = activityTypes.compactMap { type in
-                WatchSyncManager.SyncedActivityType(
-                    id: type.id,
-                    name: type.name,
-                    iconName: type.iconName,
-                    color: type.color,
-                    group: type.group
-                )
-            }
+        cachedTypes = safeTypeValues.map { v in
+            WatchSyncManager.SyncedActivityType(id: v.id, name: v.name, iconName: v.iconName, color: v.color, group: v.group)
+        }
 
-            cachedActiveRecords = activeRecords.compactMap { record in
-                guard let type = record.activityType else { return nil }
-                return WatchSyncManager.SyncedActivityRecord(
-                    id: record.id,
-                    activityTypeId: type.id,
-                    startTime: record.startTime,
-                    endTime: record.endTime,
-                    isActive: record.isActive,
-                    note: record.note
-                )
-            }
+        cachedActiveRecords = safeRecordValues.filter { $0.isActive }.map { v in
+            WatchSyncManager.SyncedActivityRecord(id: v.id, activityTypeId: v.activityTypeId, startTime: v.startTime, endTime: v.endTime, isActive: v.isActive, note: v.note)
+        }
 
-            cachedCompletedRecords = todayRecords
-                .filter { !$0.isActive }
-                .prefix(50)
-                .compactMap { record -> WatchSyncManager.SyncedActivityRecord? in
-                    guard let type = record.activityType else { return nil }
-                    return WatchSyncManager.SyncedActivityRecord(
-                        id: record.id,
-                        activityTypeId: type.id,
-                        startTime: record.startTime,
-                        endTime: record.endTime,
-                        isActive: record.isActive,
-                        note: record.note
-                    )
-                }
-        } catch {
-            print("[ViewModel] rebuildCache failed: \(error)")
-            cachedTypes = []
-            cachedActiveRecords = []
-            cachedCompletedRecords = []
+        cachedCompletedRecords = safeRecordValues.filter { !$0.isActive }.prefix(50).map { v in
+            WatchSyncManager.SyncedActivityRecord(id: v.id, activityTypeId: v.activityTypeId, startTime: v.startTime, endTime: v.endTime, isActive: v.isActive, note: v.note)
         }
     }
 
@@ -330,6 +364,9 @@ class ActivityViewModel {
                     try? context.save()
                     activeRecords.append(newRecord)
                     todayRecords.insert(newRecord, at: 0)
+                    if let typeId = newRecord.activityType?.id {
+                        safeRecordValues.append((id: newRecord.id, activityTypeId: typeId, startTime: newRecord.startTime, endTime: newRecord.endTime, isActive: newRecord.isActive, note: newRecord.note))
+                    }
                 }
             }
         }
@@ -368,7 +405,11 @@ class ActivityViewModel {
         guard let context = modelContext else { return }
         let descriptor = FetchDescriptor<ActivityType>(sortBy: [SortDescriptor(\.createdAt)])
         do {
-            activityTypes = try context.fetch(descriptor)
+            let fetched = try context.fetch(descriptor)
+            activityTypes = fetched
+            safeTypeValues = fetched.compactMap { type in
+                (id: type.id, name: type.name, iconName: type.iconName, color: type.color, group: type.group)
+            }
         } catch {
             print("Failed to fetch activity types: \(error)")
         }
@@ -386,8 +427,13 @@ class ActivityViewModel {
         let descriptor = FetchDescriptor<ActivityRecord>(predicate: predicate, sortBy: [SortDescriptor(\.startTime, order: .reverse)])
 
         do {
-            todayRecords = try context.fetch(descriptor)
-            activeRecords = todayRecords.filter { $0.isActive }
+            let fetched = try context.fetch(descriptor)
+            todayRecords = fetched
+            activeRecords = fetched.filter { $0.isActive }
+            safeRecordValues = fetched.compactMap { record in
+                guard let typeId = record.activityType?.id else { return nil }
+                return (id: record.id, activityTypeId: typeId, startTime: record.startTime, endTime: record.endTime, isActive: record.isActive, note: record.note)
+            }
         } catch {
             print("Failed to fetch today records: \(error)")
         }
@@ -407,6 +453,9 @@ class ActivityViewModel {
 
         do {
             try context.save()
+            if let typeId = record.activityType?.id {
+                safeRecordValues.append((id: record.id, activityTypeId: typeId, startTime: record.startTime, endTime: record.endTime, isActive: record.isActive, note: record.note))
+            }
             rebuildCache()
             sendSync()
         } catch {
@@ -422,6 +471,9 @@ class ActivityViewModel {
 
         do {
             try context.save()
+            if let idx = safeRecordValues.firstIndex(where: { $0.id == record.id }) {
+                safeRecordValues[idx] = (id: record.id, activityTypeId: safeRecordValues[idx].activityTypeId, startTime: record.startTime, endTime: record.endTime, isActive: false, note: record.note)
+            }
             rebuildCache()
             sendSync()
         } catch {
@@ -438,6 +490,7 @@ class ActivityViewModel {
 
         do {
             try context.save()
+            safeRecordValues.removeAll { $0.id == record.id }
             rebuildCache()
             sendSync()
         } catch {
@@ -475,68 +528,109 @@ class ActivityViewModel {
     // MARK: - Reminders
 
     func fetchReminders() {
-        guard let context = modelContext else { return }
-        let descriptor = FetchDescriptor<ActivityReminder>(sortBy: [SortDescriptor(\.hour), SortDescriptor(\.minute)])
-        do {
-            reminders = try context.fetch(descriptor)
-        } catch {
-            print("Failed to fetch reminders: \(error)")
-        }
+        reminders = ActivityReminder.loadAll()
     }
 
-    func addReminder(activityType: ActivityType, hour: Int, minute: Int, reminderType: ReminderType = .notification) {
-        guard let context = modelContext else { return }
-        let reminder = ActivityReminder(activityType: activityType, hour: hour, minute: minute)
-        context.insert(reminder)
-
-        do {
-            try context.save()
-            ReminderType.save(type: reminderType, for: reminder.id)
-            fetchReminders()
+    func addReminder(activityTypeId: UUID, activityName: String, activityIconName: String, activityColor: String, hour: Int, minute: Int, reminderType: ReminderType = .notification) {
+        let reminder = ActivityReminder(
+            activityTypeId: activityTypeId,
+            activityName: activityName,
+            activityIconName: activityIconName,
+            activityColor: activityColor,
+            hour: hour,
+            minute: minute
+        )
+        reminders.append(reminder)
+        ActivityReminder.saveAll(reminders)
+        ReminderType.save(type: reminderType, for: reminder.id)
+        
+        if reminderType == .vibration || reminderType == .vibrationWithLongPress {
+            scheduleAlarmKitAlarm(for: reminder, reminderType: reminderType)
+        } else {
             scheduleNotification(for: reminder)
-        } catch {
-            print("Failed to save reminder: \(error)")
-            context.rollback()
+        }
+    }
+    
+    private func scheduleAlarmKitAlarm(for reminder: ActivityReminder, reminderType: ReminderType) {
+        scheduleNotification(for: reminder)
+        
+        guard #available(iOS 26.0, *) else {
+            print("[AlarmKit] iOS < 26, notification-only mode")
+            return
+        }
+        
+        print("[AlarmKit] Also attempting AlarmKit schedule...")
+        let manager = AlarmKitManager.shared
+        
+        Task {
+            let authorized = await manager.ensureAuthorized()
+            guard authorized else {
+                print("[AlarmKit] Not authorized, using notification-only")
+                return
+            }
+            
+            do {
+                try await manager.scheduleAlarm(
+                    id: reminder.id,
+                    hour: reminder.hour,
+                    minute: reminder.minute,
+                    activityName: reminder.activityName,
+                    activityIconName: reminder.activityIconName,
+                    activityColor: reminder.activityColor,
+                    reminderId: reminder.id.uuidString
+                )
+                print("[AlarmKit] Daily alarm scheduled!")
+            } catch {
+                print("[AlarmKit] Schedule failed (notification still active): \(error)")
+            }
         }
     }
 
     func deleteReminder(_ reminder: ActivityReminder) {
-        guard let context = modelContext else { return }
         cancelNotification(for: reminder)
+        cancelAlarmKitAlarm(for: reminder)
         ReminderType.remove(for: reminder.id)
-        context.delete(reminder)
-
-        do {
-            try context.save()
-            fetchReminders()
-        } catch {
-            print("Failed to delete reminder: \(error)")
+        reminders.removeAll { $0.id == reminder.id }
+        ActivityReminder.saveAll(reminders)
+    }
+    
+    private func cancelAlarmKitAlarm(for reminder: ActivityReminder) {
+        guard #available(iOS 26.0, *) else { return }
+        
+        Task { @MainActor in
+            do {
+                try await AlarmKitManager.shared.cancelAlarm(id: reminder.id)
+            } catch {
+                print("[AlarmKit] Failed to cancel alarm: \(error)")
+            }
         }
     }
 
     func toggleReminder(_ reminder: ActivityReminder) {
-        guard let context = modelContext else { return }
-        reminder.isEnabled.toggle()
-
-        do {
-            try context.save()
-            if reminder.isEnabled {
-                scheduleNotification(for: reminder)
+        if let index = reminders.firstIndex(where: { $0.id == reminder.id }) {
+            reminders[index].isEnabled.toggle()
+            ActivityReminder.saveAll(reminders)
+            if reminders[index].isEnabled {
+                let reminderType = ReminderType.load(for: reminder.id)
+                if reminderType == .vibration || reminderType == .vibrationWithLongPress {
+                    scheduleAlarmKitAlarm(for: reminders[index], reminderType: reminderType)
+                } else {
+                    scheduleNotification(for: reminders[index])
+                }
             } else {
                 cancelNotification(for: reminder)
+                cancelAlarmKitAlarm(for: reminder)
             }
-        } catch {
-            print("Failed to toggle reminder: \(error)")
         }
     }
 
     private func scheduleNotification(for reminder: ActivityReminder) {
-        guard reminder.isEnabled, let type = reminder.activityType else { return }
+        guard reminder.isEnabled else { return }
         let reminderType = ReminderType.load(for: reminder.id)
 
         let content = UNMutableNotificationContent()
         content.title = "行迹提醒"
-        content.body = "该开始\(type.name)了"
+        content.body = "该开始\(reminder.activityName)了"
         content.categoryIdentifier = "ACTIVITY_REMINDER"
         content.userInfo = ["reminderId": reminder.id.uuidString]
 
@@ -561,40 +655,69 @@ class ActivityViewModel {
         case .vibration, .vibrationWithLongPress:
             content.sound = .default
             content.interruptionLevel = .timeSensitive
+            content.userInfo["isRepeating"] = true
+            content.userInfo["reminderType"] = reminderType.rawValue
+            content.userInfo["activityName"] = reminder.activityName
 
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
-            let mainRequest = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
-            UNUserNotificationCenter.current().add(mainRequest) { error in
+            let request = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(request) { error in
                 if let error = error {
-                    print("[Reminder] main schedule failed: \(error)")
+                    print("[Reminder] vibration schedule failed: \(error)")
                 }
             }
 
-            var repeatContent = UNMutableNotificationContent()
-            repeatContent.title = "行迹提醒"
-            repeatContent.body = "该开始\(type.name)了！"
-            repeatContent.sound = .default
-            repeatContent.interruptionLevel = .timeSensitive
-            repeatContent.badge = 1
-            repeatContent.userInfo = ["reminderId": reminder.id.uuidString, "isRepeating": true]
+            var fireDate = calendar.date(from: dateComponents) ?? Date()
+            if fireDate <= Date() {
+                fireDate = calendar.date(byAdding: .day, value: 1, to: fireDate) ?? fireDate
+            }
 
-            let repeatTrigger = UNTimeIntervalNotificationTrigger(timeInterval: 30, repeats: true)
-            let repeatRequest = UNNotificationRequest(identifier: "\(reminder.id.uuidString)-repeat", content: repeatContent, trigger: repeatTrigger)
-            UNUserNotificationCenter.current().add(repeatRequest) { error in
-                if let error = error {
-                    print("[Reminder] repeat schedule failed: \(error)")
+            let vibrationMessages = [
+                "该开始\(reminder.activityName)了！",
+                "⏰ \(reminder.activityName)时间到！",
+                "别忘了\(reminder.activityName)哦！",
+                "\(reminder.activityName)提醒 - 请开始吧！",
+                "还有\(reminder.activityName)没完成呢！",
+                "重要提醒：\(reminder.activityName)",
+                "\(reminder.activityName)时间到了！",
+                "请立即开始\(reminder.activityName)！"
+            ]
+
+            for i in 1...10 {
+                let repeatContent = UNMutableNotificationContent()
+                repeatContent.title = "行迹提醒"
+                repeatContent.body = vibrationMessages[(i - 1) % vibrationMessages.count]
+                repeatContent.sound = .default
+                repeatContent.interruptionLevel = .timeSensitive
+                repeatContent.badge = 1
+                repeatContent.userInfo = [
+                    "reminderId": reminder.id.uuidString,
+                    "isRepeating": true,
+                    "reminderType": reminderType.rawValue,
+                    "activityName": reminder.activityName,
+                    "repeatIndex": i
+                ]
+                let repeatDate = fireDate.addingTimeInterval(TimeInterval(i * 3))
+                let interval = repeatDate.timeIntervalSinceNow
+                guard interval > 0 else { continue }
+                let repeatTrigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+                let repeatRequest = UNNotificationRequest(identifier: "\(reminder.id.uuidString)-r\(i)", content: repeatContent, trigger: repeatTrigger)
+                UNUserNotificationCenter.current().add(repeatRequest) { error in
+                    if let error = error {
+                        print("[Reminder] repeat-\(i) schedule failed: \(error)")
+                    }
                 }
             }
         }
     }
 
     private func cancelNotification(for reminder: ActivityReminder) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: [reminder.id.uuidString, "\(reminder.id.uuidString)-repeat"]
-        )
-        UNUserNotificationCenter.current().removeDeliveredNotifications(
-            withIdentifiers: [reminder.id.uuidString, "\(reminder.id.uuidString)-repeat"]
-        )
+        var identifiers = [reminder.id.uuidString]
+        for i in 1...10 {
+            identifiers.append("\(reminder.id.uuidString)-r\(i)")
+        }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
     // MARK: - Formatting
@@ -640,6 +763,7 @@ class ActivityViewModel {
 
         do {
             try context.save()
+            fetchActivityTypes()
         } catch {
             print("Failed to save sample data: \(error)")
         }

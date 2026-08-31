@@ -104,27 +104,46 @@ final class ActivityRecord {
     }
 }
 
-@Model
-final class ActivityReminder {
+struct ActivityReminder: Codable, Identifiable {
     var id: UUID
-    var activityType: ActivityType?
+    var activityTypeId: UUID
+    var activityName: String
+    var activityIconName: String
+    var activityColor: String
     var hour: Int
     var minute: Int
     var isEnabled: Bool
-    var repeatDays: [Int]
     var createdAt: Date
 
-    init(activityType: ActivityType, hour: Int, minute: Int, repeatDays: [Int] = [1,2,3,4,5,6,7]) {
+    init(activityTypeId: UUID, activityName: String, activityIconName: String, activityColor: String, hour: Int, minute: Int) {
         self.id = UUID()
-        self.activityType = activityType
+        self.activityTypeId = activityTypeId
+        self.activityName = activityName
+        self.activityIconName = activityIconName
+        self.activityColor = activityColor
         self.hour = hour
         self.minute = minute
         self.isEnabled = true
-        self.repeatDays = repeatDays
         self.createdAt = Date()
     }
 
     var timeString: String {
         String(format: "%02d:%02d", hour, minute)
+    }
+
+    static let defaultsKey = "activityReminders"
+
+    static func loadAll() -> [ActivityReminder] {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+              let reminders = try? JSONDecoder().decode([ActivityReminder].self, from: data) else {
+            return []
+        }
+        return reminders
+    }
+
+    static func saveAll(_ reminders: [ActivityReminder]) {
+        if let data = try? JSONEncoder().encode(reminders) {
+            UserDefaults.standard.set(data, forKey: defaultsKey)
+        }
     }
 }

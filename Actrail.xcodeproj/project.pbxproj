@@ -35,8 +35,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		A1B2C3D400000005 /* Actrail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Actrail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D400000002 /* Actrail Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Actrail Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D400000005 /* Actrail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Actrail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -91,6 +91,25 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A1B2C3D400000006 /* Actrail Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1B2C3D400000014 /* Build configuration list for PBXNativeTarget "Actrail Watch App" */;
+			buildPhases = (
+				A1B2C3D40000001D /* Sources */,
+				A1B2C3D40000000A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A1B2C3D400000008 /* Actrail Watch App */,
+			);
+			name = "Actrail Watch App";
+			productName = "Actrail Watch App";
+			productReference = A1B2C3D400000002 /* Actrail Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
 		A1B2C3D40000000D /* Actrail */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A1B2C3D400000012 /* Build configuration list for PBXNativeTarget "Actrail" */;
@@ -112,25 +131,6 @@
 			productReference = A1B2C3D400000005 /* Actrail.app */;
 			productType = "com.apple.product-type.application";
 		};
-		A1B2C3D400000006 /* Actrail Watch App */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A1B2C3D400000014 /* Build configuration list for PBXNativeTarget "Actrail Watch App" */;
-			buildPhases = (
-				A1B2C3D40000001D /* Sources */,
-				A1B2C3D40000000A /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				A1B2C3D400000008 /* Actrail Watch App */,
-			);
-			name = "Actrail Watch App";
-			productName = "Actrail Watch App";
-			productReference = A1B2C3D400000002 /* Actrail Watch App.app */;
-			productType = "com.apple.product-type.application";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -141,10 +141,10 @@
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
-					A1B2C3D40000000D = {
+					A1B2C3D400000006 = {
 						CreatedOnToolsVersion = 26.6;
 					};
-					A1B2C3D400000006 = {
+					A1B2C3D40000000D = {
 						CreatedOnToolsVersion = 26.6;
 					};
 				};
@@ -169,14 +169,6 @@
 		};
 /* End PBXProject section */
 
-/* Begin PBXTargetDependency section */
-		A1B2C3D40000001B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A1B2C3D400000006 /* Actrail Watch App */;
-			targetProxy = A1B2C3D400000003 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXSourcesBuildPhase section */
 		A1B2C3D40000001C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -193,6 +185,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A1B2C3D40000001B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B2C3D400000006 /* Actrail Watch App */;
+			targetProxy = A1B2C3D400000003 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A1B2C3D400000015 /* Debug */ = {
@@ -326,7 +326,9 @@
 				DEVELOPMENT_TEAM = 9WDTRCX4KN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Actrail/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "行迹";
+				INFOPLIST_KEY_NSAlarmKitUsageDescription = "行迹需要设置闹钟提醒您开始活动，即使在静音模式下也会提醒。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -356,7 +358,9 @@
 				DEVELOPMENT_TEAM = 9WDTRCX4KN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Actrail/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "行迹";
+				INFOPLIST_KEY_NSAlarmKitUsageDescription = "行迹需要设置闹钟提醒您开始活动，即使在静音模式下也会提醒。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -467,7 +471,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = A1B2C3D400000010 /* Project object */;
 }
