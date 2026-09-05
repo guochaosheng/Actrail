@@ -1,6 +1,13 @@
 import Foundation
 import WatchConnectivity
 import WatchKit
+import WidgetKit
+
+enum AppGroupConstant {
+    static let suiteName = "group.com.actrail.app"
+    static let todayTotalMinutesKey = "todayTotalMinutes"
+    static let activeActivityNameKey = "activeActivityName"
+}
 
 @Observable
 class WatchActivityViewModel {
@@ -382,6 +389,7 @@ class WatchActivityViewModel {
         let record = WatchActivityRecord(activityType: type)
         activeRecords.append(record)
 
+        updateComplicationData()
         syncManager.sendActivityStart(typeId: type.id)
     }
 
@@ -392,6 +400,7 @@ class WatchActivityViewModel {
             activeRecords.remove(at: index)
             completedRecords.insert(updatedRecord, at: 0)
 
+            updateComplicationData()
             syncManager.sendActivityStop(recordId: record.id)
         }
     }
@@ -431,13 +440,15 @@ class WatchActivityViewModel {
         }
 
         let totalMinutes = Int(totalSeconds) / 60
-        let defaults = UserDefaults.standard
-        defaults.set(totalMinutes, forKey: "todayTotalMinutes")
+        let shared = UserDefaults(suiteName: AppGroupConstant.suiteName)
+        shared?.set(totalMinutes, forKey: AppGroupConstant.todayTotalMinutesKey)
         if let name = activeActivityName {
-            defaults.set(name, forKey: "activeActivityName")
+            shared?.set(name, forKey: AppGroupConstant.activeActivityNameKey)
         } else {
-            defaults.removeObject(forKey: "activeActivityName")
+            shared?.removeObject(forKey: AppGroupConstant.activeActivityNameKey)
         }
+
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 

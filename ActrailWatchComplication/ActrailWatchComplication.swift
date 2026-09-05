@@ -49,18 +49,28 @@ struct ActivityEntry: TimelineEntry {
     let totalMinutes: Int
 }
 
+enum AppGroupConstant {
+    static let suiteName = "group.com.actrail.app"
+    static let todayTotalMinutesKey = "todayTotalMinutes"
+    static let activeActivityNameKey = "activeActivityName"
+}
+
 struct ActivityTimelineProvider: TimelineProvider {
+    func sharedTotalMinutes() -> Int {
+        UserDefaults(suiteName: AppGroupConstant.suiteName)?.integer(forKey: AppGroupConstant.todayTotalMinutesKey) ?? 0
+    }
+
     func placeholder(in context: Context) -> ActivityEntry {
-        ActivityEntry(date: Date(), totalMinutes: 42)
+        ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes())
     }
 
     func getSnapshot(in context: Context, completion: @escaping (ActivityEntry) -> Void) {
-        completion(ActivityEntry(date: Date(), totalMinutes: 42))
+        completion(ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<ActivityEntry>) -> Void) {
-        let entry = ActivityEntry(date: Date(), totalMinutes: 42)
-        let nextUpdate = Calendar.current.date(byAdding: .hour, value: 1, to: Date())!
+        let entry = ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes())
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 5, to: Date())!
         completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
     }
 }
