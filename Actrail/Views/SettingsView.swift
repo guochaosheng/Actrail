@@ -1,15 +1,18 @@
 import SwiftUI
+import UserNotifications
+import AlarmKit
 
 struct SettingsView: View {
     var viewModel: ActivityViewModel
     @State private var notificationsEnabled = true
     @State private var hapticFeedback = true
     @State private var autoBackup = false
-    
-    @State private var alarmKitAuthState = "未知"
-    @State private var showTestAlert = false
-    @State private var testAlertMessage = ""
-    
+    @State private var notificationAuthorized = false
+    @State private var notificationAuthText = "未知"
+    @State private var pendingCountText = "—"
+    @State private var alarmKitAuthText = "未知"
+    @State private var diagLogs: [DiagnosticLogEntry] = []
+
     var body: some View {
         NavigationView {
             List {
@@ -18,40 +21,156 @@ struct SettingsView: View {
                     Toggle("触觉反馈", isOn: $hapticFeedback)
                     Toggle("自动备份", isOn: $autoBackup)
                 }
-                
-                if #available(iOS 26.0, *) {
-                    Section("闹钟 (AlarmKit)") {
-                        HStack {
-                            Text("授权状态")
-                            Spacer()
-                            Text(alarmKitAuthState)
-                                .foregroundColor(alarmKitAuthState == "已授权" ? .green : .red)
-                                .font(.caption)
-                        }
-                        
-                        if alarmKitAuthState == "已拒绝（需到系统设置中开启）" {
-                            Text("请前往「设置 > 行迹 > 闹钟」手动开启")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
-                        
-                        Button("请求 AlarmKit 授权") {
-                            Task {
-                                let authorized = await AlarmKitManager.shared.requestAuthorization()
-                                alarmKitAuthState = authorized ? "已授权" : AlarmKitManager.shared.authorizationStateDescription
-                                testAlertMessage = authorized ? "授权成功！" : "授权失败：\(AlarmKitManager.shared.authorizationStateDescription)"
-                                showTestAlert = true
+
+                Section("iWatch 提醒") {
+                    Button("测试：手表立即提醒") {
+                        viewModel.testReminderOnWatch()
+                    }
+                }
+
+                Section("通知状态") {
+                    HStack {
+                        Text("通知授权")
+                        Spacer()
+                        Text(notificationAuthText)
+                            .foregroundColor(notificationAuthorized ? .green : .red)
+                            .font(.caption)
+                    }
+                    HStack {
+                        Text("已保存提醒")
+                        Spacer()
+                        Text("\(viewModel.reminders.count) 条")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("待处理通知")
+                        Spacer()
+                        Text(pendingCountText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Button("重排所有提醒") {
+                        viewModel.rescheduleAllPhoneNotificationsPublic()
+                        refreshNotificationStatus()
+                    }
+                    Button("查询手表通知状态") {
+                        viewModel.requestWatchStatus()
+                    }
+                    if !viewModel.watchStatusString.isEmpty {
+                        Text(viewModel.watchStatusString)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+
+                Section("闹钟诊断 (AlarmKit)") {
+                    HStack {
+                        Text("AlarmKit 授权")
+                        Spacer()
+                        Text(alarmKitAuthText)
+                            .foregroundColor(alarmKitAuthText == "已授权" ? .green : .red)
+                            .font(.caption)
+                    }
+                    // 显示已保存的提醒列表
+                    ForEach(viewModel.reminders) { reminder in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(reminder.timeString)
+                                    .font(.body.monospacedDigit())
+                                Spacer()
+                                let alarmLog = viewModel.reminderLogs.first(where: {
+                                    $0.reminderID == reminder.id && $0.source == "闹钟计划"
+                                })
+                                if let log = alarmLog {
+                                    Text(log.status == "已取消" ? "已取消" : "计划中")
+                                        .font(.caption2)
+                                        .foregroundColor(log.status == "已取消" ? .gray : .orange)
+                                } else if reminder.alarmEnabled {
+                                    Text("待排定")
+                                        .font(.caption2)
+                                        .foregroundColor(.yellow)
+                                }
+                                if reminder.alarmEnabled {
+                                    Text("闹钟+\(reminder.alarmGraceMinutes)分")
+                                        .font(.caption2)
+                                        .foregroundColor(.orange)
+                                }
                             }
+                            Text("ID: \(reminder.id.uuidString.prefix(8))")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
-                        
-                        Button("测试：1分钟后闹钟") {
-                            Task {
-                                await testAlarmKit()
+                    }
+                    // 显示闹钟相关的历史记录
+                    let alarmLogs = viewModel.reminderLogs.filter {
+                        $0.source.contains("闹钟")
+                    }
+                    if !alarmLogs.isEmpty {
+                        Divider()
+                        Text("闹钟历史记录")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        ForEach(alarmLogs) { log in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(log.source)
+                                        .font(.caption2)
+                                        .foregroundColor(.blue)
+                                    if !log.status.isEmpty {
+                                        Text(log.status)
+                                            .font(.caption2)
+                                            .foregroundColor(log.status == "已取消" ? .gray : .blue)
+                                    }
+                                }
+                                Text(log.content)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
                             }
                         }
                     }
                 }
-                
+
+                Section("闹钟操作日志（持久化）") {
+                    if diagLogs.isEmpty {
+                        Text("暂无日志")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        ForEach(diagLogs) { entry in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(entry.tag)
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.orange)
+                                    Spacer()
+                                    Text(formatDiagTime(entry.timestamp))
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                Text(entry.message)
+                                    .font(.caption2)
+                                if !entry.callStack.isEmpty {
+                                    Text(entry.callStack)
+                                        .font(.system(size: 8, design: .monospaced))
+                                        .foregroundColor(.gray)
+                                        .lineLimit(3)
+                                }
+                            }
+                        }
+                        Button("清除日志") {
+                            DiagnosticLog.clear()
+                            diagLogs = []
+                        }
+                        .foregroundColor(.red)
+                    }
+                }
+                .onAppear {
+                    diagLogs = DiagnosticLog.load()
+                }
+
                 Section("外观") {
                     NavigationLink("主题颜色") {
                         Text("主题颜色设置")
@@ -104,60 +223,57 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("设置")
-            .alert("AlarmKit", isPresented: $showTestAlert) {
-                Button("确定") {}
-            } message: {
-                Text(testAlertMessage)
-            }
-            .task {
-                if #available(iOS 26.0, *) {
-                    let manager = AlarmKitManager.shared
-                    if manager.isAuthorized {
-                        alarmKitAuthState = "已授权"
-                    } else {
-                        alarmKitAuthState = "未授权"
-                    }
-                }
+            .onAppear {
+                refreshNotificationStatus()
+                refreshAlarmKitStatus()
             }
         }
     }
-    
-    private func testAlarmKit() async {
-        guard #available(iOS 26.0, *) else {
-            testAlertMessage = "需要 iOS 26+"
-            showTestAlert = true
-            return
+
+    private func refreshNotificationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    self.notificationAuthorized = true
+                    self.notificationAuthText = "已授权"
+                case .notDetermined:
+                    self.notificationAuthorized = false
+                    self.notificationAuthText = "未请求"
+                case .denied:
+                    self.notificationAuthorized = false
+                    self.notificationAuthText = "已拒绝"
+                @unknown default:
+                    self.notificationAuthorized = false
+                    self.notificationAuthText = "未知"
+                }
+            }
         }
-        
+        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+            DispatchQueue.main.async {
+                self.pendingCountText = "\(requests.count) 条"
+            }
+        }
+    }
+
+    private func refreshAlarmKitStatus() {
         let manager = AlarmKitManager.shared
-        let authorized = await manager.ensureAuthorized()
-        guard authorized else {
-            testAlertMessage = "AlarmKit 未授权"
-            showTestAlert = true
-            return
+        switch manager.authorizationState {
+        case .authorized:
+            alarmKitAuthText = "已授权"
+        case .denied:
+            alarmKitAuthText = "已拒绝"
+        case .notDetermined:
+            alarmKitAuthText = "未请求"
+        @unknown default:
+            alarmKitAuthText = "未知"
         }
-        
-        let calendar = Calendar.current
-        let fireDate = calendar.date(byAdding: .minute, value: 1, to: Date()) ?? Date()
-        let components = calendar.dateComponents([.hour, .minute], from: fireDate)
-        let hour = components.hour ?? 0
-        let minute = components.minute ?? 0
-        
-        do {
-            try await manager.scheduleAlarm(
-                id: UUID(),
-                hour: hour,
-                minute: minute,
-                activityName: "测试活动",
-                activityIconName: "bell.fill",
-                activityColor: "#FF3B30",
-                reminderId: UUID().uuidString
-            )
-            testAlertMessage = "闹钟已设置，将在 \(hour):\(String(format: "%02d", minute)) 响起"
-        } catch {
-            testAlertMessage = "设置失败: \(error)"
-        }
-        showTestAlert = true
+    }
+
+    private func formatDiagTime(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f.string(from: date)
     }
 }
 

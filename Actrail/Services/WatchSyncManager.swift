@@ -11,6 +11,8 @@ class WatchSyncManager {
 
     var onActivityUpdate: (([SyncedActivityType], [SyncedActivityRecord]) -> Void)?
     var onReachabilityChange: ((Bool) -> Void)?
+    var onReminderLogReceived: ((ReminderLogEntry) -> Void)?
+    var onWatchStatusReceived: (([String: Any]) -> Void)?
 
     struct SyncedActivityType: Codable, Identifiable {
         let id: UUID
@@ -29,10 +31,16 @@ class WatchSyncManager {
         let note: String
     }
 
+    struct SyncedReminder: Codable, Identifiable {
+        let id: UUID
+        let date: Date
+    }
+
     struct SyncMessage: Codable {
         let activityTypes: [SyncedActivityType]
         let activeRecords: [SyncedActivityRecord]
         let completedRecords: [SyncedActivityRecord]
+        let reminders: [SyncedReminder]
         let timestamp: Date
     }
 
@@ -53,11 +61,12 @@ class WatchSyncManager {
         self.onActivityUpdate = handler
     }
 
-    func sendActivityUpdate(types: [SyncedActivityType], activeRecords: [SyncedActivityRecord], completedRecords: [SyncedActivityRecord]) {
+    func sendActivityUpdate(types: [SyncedActivityType], activeRecords: [SyncedActivityRecord], completedRecords: [SyncedActivityRecord], reminders: [SyncedReminder]) {
         let message = SyncMessage(
             activityTypes: types,
             activeRecords: activeRecords,
             completedRecords: completedRecords,
+            reminders: reminders,
             timestamp: Date()
         )
 
@@ -100,7 +109,44 @@ class WatchSyncManager {
         }
     }
 
+    func sendReminderTest() {
+        let userInfo: [String: Any] = ["action": "reminderTest"]
+        let session = WCSession.default
+        if session.isReachable {
+            session.sendMessage(userInfo, replyHandler: nil) { error in
+                print("[iPhone Sync] reminderTest failed: \(error)")
+            }
+        } else {
+            session.transferUserInfo(userInfo)
+        }
+    }
+
+    func requestWatchStatus() {
+        let userInfo: [String: Any] = ["action": "queryWatchStatus"]
+        let session = WCSession.default
+        if session.isReachable {
+            session.sendMessage(userInfo, replyHandler: nil) { error in
+                print("[iPhone Sync] queryWatchStatus failed: \(error)")
+            }
+        } else {
+            session.transferUserInfo(userInfo)
+        }
+    }
+
     func handleReceivedPayload(_ payload: [String: Any]) {
+        if let action = payload["action"] as? String, action == "reminderLog" {
+            if let data = payload["log"] as? Data,
+               let log = try? JSONDecoder().decode(ReminderLogEntry.self, from: data) {
+                Task { @MainActor in
+                    onReminderLogReceived?(log)
+                }
+            }
+        }
+        if let status = payload["watchStatus"] as? [String: Any] {
+            Task { @MainActor in
+                onWatchStatusReceived?(status)
+            }
+        }
         if let data = payload["activityData"] as? Data {
             let message = try? JSONDecoder().decode(SyncMessage.self, from: data)
             if let message {

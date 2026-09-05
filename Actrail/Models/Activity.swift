@@ -1,48 +1,6 @@
 import Foundation
 import SwiftData
 
-enum ReminderType: Int, Codable, CaseIterable {
-    case notification = 0
-    case vibration = 1
-    case vibrationWithLongPress = 2
-
-    var displayName: String {
-        switch self {
-        case .notification: return "通知"
-        case .vibration: return "振动"
-        case .vibrationWithLongPress: return "振动+长按解锁"
-        }
-    }
-
-    var iconName: String {
-        switch self {
-        case .notification: return "bell.fill"
-        case .vibration: return "antenna.radiowaves.left.and.right"
-        case .vibrationWithLongPress: return "lock.fill"
-        }
-    }
-
-    static let defaultsKey = "reminderTypes"
-
-    static func save(type: ReminderType, for reminderId: UUID) {
-        var dict = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: Int] ?? [:]
-        dict[reminderId.uuidString] = type.rawValue
-        UserDefaults.standard.set(dict, forKey: defaultsKey)
-    }
-
-    static func load(for reminderId: UUID) -> ReminderType {
-        let dict = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: Int] ?? [:]
-        guard let raw = dict[reminderId.uuidString] else { return .notification }
-        return ReminderType(rawValue: raw) ?? .notification
-    }
-
-    static func remove(for reminderId: UUID) {
-        var dict = UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: Int] ?? [:]
-        dict.removeValue(forKey: reminderId.uuidString)
-        UserDefaults.standard.set(dict, forKey: defaultsKey)
-    }
-}
-
 @Model
 final class ActivityType {
     var id: UUID
@@ -106,29 +64,66 @@ final class ActivityRecord {
 
 struct ActivityReminder: Codable, Identifiable {
     var id: UUID
-    var activityTypeId: UUID
-    var activityName: String
-    var activityIconName: String
-    var activityColor: String
-    var hour: Int
-    var minute: Int
+    var date: Date
     var isEnabled: Bool
     var createdAt: Date
+    var alarmEnabled: Bool
+    var alarmGraceMinutes: Int
 
-    init(activityTypeId: UUID, activityName: String, activityIconName: String, activityColor: String, hour: Int, minute: Int) {
+    init(date: Date, alarmEnabled: Bool = false, alarmGraceMinutes: Int = 5) {
         self.id = UUID()
-        self.activityTypeId = activityTypeId
-        self.activityName = activityName
-        self.activityIconName = activityIconName
-        self.activityColor = activityColor
-        self.hour = hour
-        self.minute = minute
+        self.date = date
         self.isEnabled = true
         self.createdAt = Date()
+        self.alarmEnabled = alarmEnabled
+        self.alarmGraceMinutes = alarmGraceMinutes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, date, isEnabled, createdAt
+        case alarmEnabled, alarmGraceMinutes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        isEnabled = try c.decode(Bool.self, forKey: .isEnabled)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        alarmEnabled = try c.decodeIfPresent(Bool.self, forKey: .alarmEnabled) ?? false
+        alarmGraceMinutes = try c.decodeIfPresent(Int.self, forKey: .alarmGraceMinutes) ?? 5
+
+        // 向后兼容：旧格式用 hour/minute，新格式用 date
+        if let d = try? c.decode(Date.self, forKey: .date) {
+            date = d
+        } else {
+            // 尝试从旧格式解码 hour/minute
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            let h = try legacy.decode(Int.self, forKey: .hour)
+            let m = try legacy.decode(Int.self, forKey: .minute)
+            var comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+            comps.hour = h
+            comps.minute = m
+            date = Calendar.current.date(from: comps) ?? Date()
+        }
+    }
+
+    var hour: Int {
+        Calendar.current.component(.hour, from: date)
+    }
+
+    var minute: Int {
+        Calendar.current.component(.minute, from: date)
     }
 
     var timeString: String {
-        String(format: "%02d:%02d", hour, minute)
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm"
+        return f.string(from: date)
+    }
+
+    // 向后兼容 CodingKeys（旧数据含 hour/minute）
+    enum LegacyCodingKeys: String, CodingKey {
+        case hour, minute
     }
 
     static let defaultsKey = "activityReminders"
@@ -143,6 +138,61 @@ struct ActivityReminder: Codable, Identifiable {
 
     static func saveAll(_ reminders: [ActivityReminder]) {
         if let data = try? JSONEncoder().encode(reminders) {
+            UserDefaults.standard.set(data, forKey: defaultsKey)
+        }
+    }
+}
+
+struct ReminderLogEntry: Codable, Identifiable {
+    var id: UUID
+    var content: String
+    var presetTime: Date
+    var sentTime: Date
+    var sentSuccessfully: Bool
+    var source: String
+    var status: String
+    var reminderID: UUID?
+
+    init(content: String, presetTime: Date, sentTime: Date, sentSuccessfully: Bool, source: String, status: String = "", reminderID: UUID? = nil) {
+        self.id = UUID()
+        self.content = content
+        self.presetTime = presetTime
+        self.sentTime = sentTime
+        self.sentSuccessfully = sentSuccessfully
+        self.source = source
+        self.status = status
+        self.reminderID = reminderID
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, content, presetTime, sentTime, sentSuccessfully, source
+        case status, reminderID
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        content = try c.decode(String.self, forKey: .content)
+        presetTime = try c.decode(Date.self, forKey: .presetTime)
+        sentTime = try c.decode(Date.self, forKey: .sentTime)
+        sentSuccessfully = try c.decode(Bool.self, forKey: .sentSuccessfully)
+        source = try c.decode(String.self, forKey: .source)
+        status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
+        reminderID = try c.decodeIfPresent(UUID.self, forKey: .reminderID)
+    }
+
+    static let defaultsKey = "reminderLogs"
+
+    static func loadAll() -> [ReminderLogEntry] {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+              let logs = try? JSONDecoder().decode([ReminderLogEntry].self, from: data) else {
+            return []
+        }
+        return logs
+    }
+
+    static func saveAll(_ logs: [ReminderLogEntry]) {
+        if let data = try? JSONEncoder().encode(logs) {
             UserDefaults.standard.set(data, forKey: defaultsKey)
         }
     }

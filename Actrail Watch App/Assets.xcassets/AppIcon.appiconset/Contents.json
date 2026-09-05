@@ -1,10 +1,10 @@
 {
   "images" : [
     {
-      "filename" : "icon-1024.png",
       "idiom" : "universal",
-      "platform" : "ios",
-      "size" : "1024x1024"
+      "platform" : "watchos",
+      "size" : "1024x1024",
+      "filename" : "icon.png"
     }
   ],
   "info" : {

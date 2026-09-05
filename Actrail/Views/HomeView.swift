@@ -91,6 +91,32 @@ struct HomeView: View {
                         }
                     }
                 }
+
+                // 提醒历史
+                Section {
+                    if viewModel.reminderLogs.isEmpty {
+                        Text("暂无提醒记录")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                    } else {
+                        ForEach(viewModel.reminderLogs) { log in
+                            ReminderLogRow(log: log)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        viewModel.deleteReminderLog(log)
+                                    } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
+                                }
+                        }
+                        .listRowSeparator(.hidden)
+                    }
+                } header: {
+                    Text("提醒历史")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
             }
             .listStyle(.plain)
             .toolbar {
@@ -105,15 +131,6 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showingAddReminder) {
                 AddReminderView(viewModel: viewModel)
-            }
-            .overlay {
-                if let alert = viewModel.activeVibrationAlert {
-                    VibrationAlertView(
-                        activityName: alert.activityName,
-                        reminderType: alert.reminderType,
-                        onDismiss: { viewModel.stopVibration() }
-                    )
-                }
             }
         }
     }
@@ -190,7 +207,10 @@ struct ActivityTypeButton: View {
                     .font(.caption)
                     .foregroundColor(.primary)
             }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -200,17 +220,17 @@ struct ReminderRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: reminder.activityIconName)
-                .foregroundColor(Color(hex: reminder.activityColor))
+            Image(systemName: "bell.badge.fill")
+                .foregroundColor(.red)
                 .frame(width: 30)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(reminder.activityName)
+                    Text("提醒")
                         .font(.subheadline)
                     Text("·")
                         .foregroundColor(.secondary)
-                    Text(ReminderType.load(for: reminder.id).displayName)
+                    Label("iPhone + iWatch 本地通知", systemImage: "applewatch")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -233,136 +253,53 @@ struct ReminderRow: View {
     }
 }
 
-struct VibrationAlertView: View {
-    let activityName: String
-    let reminderType: ReminderType
-    let onDismiss: () -> Void
-    @State private var holdProgress: CGFloat = 0
-    @State private var isHolding = false
-    @State private var holdTimer: Timer?
-    @State private var elapsedHoldTime: TimeInterval = 0
-    private let requiredHoldTime: TimeInterval = 5.0
+struct ReminderLogRow: View {
+    let log: ReminderLogEntry
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.8)
-                .ignoresSafeArea()
-
-            VStack(spacing: 30) {
-                Image(systemName: "bell.badge.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(.red)
-                    .symbolEffect(.pulse)
-
-                Text("提醒")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-
-                Text("该开始 \(activityName) 了")
-                    .font(.title2)
-                    .foregroundColor(.white)
-
-                if reminderType == .vibration {
-                    Button(action: onDismiss) {
-                        Text("确认")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.blue)
-                            .cornerRadius(16)
-                    }
-                    .padding(.horizontal, 40)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                if log.source == "闹钟计划" || log.source == "闹钟已取消" {
+                    Image(systemName: "alarm")
+                        .foregroundColor(log.sentSuccessfully ? .blue : .red)
                 } else {
-                    VStack(spacing: 16) {
-                        ZStack {
-                            Circle()
-                                .stroke(Color.white.opacity(0.3), lineWidth: 8)
-                                .frame(width: 80, height: 80)
-
-                            Circle()
-                                .trim(from: 0, to: holdProgress)
-                                .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                                .frame(width: 80, height: 80)
-                                .rotationEffect(.degrees(-90))
-
-                            Text("\(Int(requiredHoldTime - elapsedHoldTime))")
-                                .font(.title)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                        }
-
-                        Text("长按5秒确认关闭")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.7))
-
-                        Text("按住不放...")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                    .frame(height: 180)
-                    .onLongPressGesture(minimumDuration: requiredHoldTime, pressing: { pressing in
-                        isHolding = pressing
-                        if pressing {
-                            startHoldTimer()
-                        } else {
-                            resetHoldTimer()
-                        }
-                    }, perform: {
-                        onDismiss()
-                    })
+                    Image(systemName: log.source.contains("iWatch") ? "applewatch" : "iphone")
+                        .foregroundColor(log.sentSuccessfully ? .green : .red)
                 }
-
-                Text("时间：\(Date.now, style: .time)")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+                Text(log.source)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+                if log.status.isEmpty {
+                    Text(log.sentSuccessfully ? "发送成功" : "发送失败")
+                        .font(.caption)
+                        .foregroundColor(log.sentSuccessfully ? .green : .red)
+                } else {
+                    Text(log.status)
+                        .font(.caption)
+                        .foregroundColor(log.status == "已取消" ? .gray : .blue)
+                }
             }
-        }
-        .onAppear {
-            if reminderType == .vibration {
-                startVibrationPattern()
+
+            Text(log.content)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack {
+                Text("预设 \(Self.timeFormatter.string(from: log.presetTime))")
+                Text("·")
+                Text("发出 \(Self.timeFormatter.string(from: log.sentTime))")
             }
+            .font(.caption2)
+            .foregroundColor(.secondary)
         }
-        .onDisappear {
-            holdTimer?.invalidate()
-        }
-    }
-
-    private func startVibrationPattern() {
-        let generator = UINotificationFeedbackGenerator()
-        generator.notificationOccurred(.error)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            if reminderType == .vibration {
-                generator.notificationOccurred(.error)
-            }
-        }
-    }
-
-    private func startHoldTimer() {
-        elapsedHoldTime = 0
-        holdTimer?.invalidate()
-        holdTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
-            elapsedHoldTime += 0.1
-            holdProgress = CGFloat(elapsedHoldTime / requiredHoldTime)
-
-            let generator = UIImpactFeedbackGenerator(style: .heavy)
-            generator.impactOccurred()
-
-            if elapsedHoldTime >= requiredHoldTime {
-                timer.invalidate()
-                onDismiss()
-            }
-        }
-    }
-
-    private func resetHoldTimer() {
-        holdTimer?.invalidate()
-        holdTimer = nil
-        holdProgress = 0
-        elapsedHoldTime = 0
+        .padding(.vertical, 4)
     }
 }
 
@@ -370,79 +307,52 @@ struct AddReminderView: View {
     @Bindable var viewModel: ActivityViewModel
     @Environment(\.dismiss) var dismiss
 
-    @State private var selectedTypeIndex = 0
-    @State private var hour = 9
-    @State private var minute = 0
-    @State private var selectedReminderType: ReminderType = .notification
-    @State private var cachedTypeId: UUID?
-    @State private var cachedTypeName: String = ""
-    @State private var cachedTypeIcon: String = ""
-    @State private var cachedTypeColor: String = ""
+    @State private var reminderDate = Date()
+    @State private var alarmEnabled = false
+    @State private var alarmGraceMinutes = 5
 
     var body: some View {
         NavigationView {
             Form {
-                Section("选择活动") {
-                    Picker("活动类型", selection: $selectedTypeIndex) {
-                        ForEach(Array(viewModel.activityTypes.enumerated()), id: \.offset) { index, type in
-                            HStack {
-                                Image(systemName: type.iconName)
-                                    .foregroundColor(Color(hex: type.color))
-                                Text(type.name)
-                            }
-                            .tag(index)
-                        }
-                    }
-                    .pickerStyle(.wheel)
-                    .onChange(of: selectedTypeIndex) { newIndex in
-                        cacheSelectedType(newIndex)
-                    }
-                }
-
                 Section("提醒时间") {
-                    HStack {
-                        Picker("时", selection: $hour) {
-                            ForEach(0..<24, id: \.self) { h in
-                                Text(String(format: "%02d", h)).tag(h)
-                            }
-                        }
-                        .pickerStyle(.wheel)
-                        .frame(width: 80)
+                    DatePicker(
+                        "选择日期和时间",
+                        selection: $reminderDate,
+                        in: Date()...,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .datePickerStyle(.graphical)
+                }
 
-                        Text(":")
-                            .font(.title)
-                            .fontWeight(.bold)
-
-                        Picker("分", selection: $minute) {
-                            ForEach(0..<60, id: \.self) { m in
-                                Text(String(format: "%02d", m)).tag(m)
-                            }
-                        }
-                        .pickerStyle(.wheel)
-                        .frame(width: 80)
+                Section {
+                    HStack(spacing: 10) {
+                        Image(systemName: "iphone")
+                            .foregroundColor(.blue)
+                        Image(systemName: "applewatch")
+                            .foregroundColor(.blue)
+                        Text("到点后在 iPhone 与 iWatch 各发送本地通知，提醒复检当前正在进行的活动是否正确")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
 
-                Section("提醒方式") {
-                    ForEach(ReminderType.allCases, id: \.self) { type in
-                        Button(action: { selectedReminderType = type }) {
-                            HStack {
-                                Image(systemName: type.iconName)
-                                    .frame(width: 30)
-                                VStack(alignment: .leading) {
-                                    Text(type.displayName)
-                                        .foregroundColor(.primary)
-                                    Text(reminderTypeDescription(type))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                if selectedReminderType == type {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.blue)
+                Section {
+                    Toggle("闹钟持续提醒", isOn: $alarmEnabled)
+                        .tint(.blue)
+                    if alarmEnabled {
+                        HStack {
+                            Text("未打开等待时间")
+                            Spacer()
+                            Picker("分钟", selection: $alarmGraceMinutes) {
+                                ForEach(1...30, id: \.self) { n in
+                                    Text("\(n) 分钟").tag(n)
                                 }
                             }
+                            .pickerStyle(.menu)
                         }
+                        Text("通知发出后，若 \(alarmGraceMinutes) 分钟内未打开 iPhone 且存在进行中的活动，iPhone 将持续振动提醒，直到打开确认")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
 
@@ -455,7 +365,6 @@ struct AddReminderView: View {
                             Spacer()
                         }
                     }
-                    .disabled(cachedTypeId == nil)
                 }
             }
             .navigationTitle("添加提醒")
@@ -465,42 +374,14 @@ struct AddReminderView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .onAppear {
-                cacheSelectedType(selectedTypeIndex)
-            }
-        }
-    }
-
-    private func cacheSelectedType(_ index: Int) {
-        guard index < viewModel.activityTypes.count else { return }
-        let type = viewModel.activityTypes[index]
-        cachedTypeId = type.id
-        cachedTypeName = type.name
-        cachedTypeIcon = type.iconName
-        cachedTypeColor = type.color
-    }
-
-    func reminderTypeDescription(_ type: ReminderType) -> String {
-        switch type {
-        case .notification:
-            return "到点时推送通知"
-        case .vibration:
-            return "弹出提示框并持续振动，点击确认关闭"
-        case .vibrationWithLongPress:
-            return "弹出提示框并持续振动，长按5秒确认关闭"
         }
     }
 
     func saveReminder() {
-        guard let typeId = cachedTypeId else { return }
         viewModel.addReminder(
-            activityTypeId: typeId,
-            activityName: cachedTypeName,
-            activityIconName: cachedTypeIcon,
-            activityColor: cachedTypeColor,
-            hour: hour,
-            minute: minute,
-            reminderType: selectedReminderType
+            date: reminderDate,
+            alarmEnabled: alarmEnabled,
+            alarmGraceMinutes: alarmGraceMinutes
         )
         dismiss()
     }

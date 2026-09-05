@@ -1,5 +1,5 @@
 import Foundation
-import WatchConnectivity
+@preconcurrency import WatchConnectivity
 import Observation
 
 @Observable
@@ -11,6 +11,8 @@ class WatchSyncManager {
 
     var onDataUpdate: ((Data) -> Void)?
     var onReachabilityChange: ((Bool) -> Void)?
+    var onReminderTest: (() -> Void)?
+    var onQueryWatchStatus: (() -> Void)?
 
     struct SyncedActivityType: Codable, Identifiable {
         let id: UUID
@@ -29,14 +31,38 @@ class WatchSyncManager {
         let note: String
     }
 
+    struct SyncedReminder: Codable, Identifiable {
+        let id: UUID
+        let date: Date
+    }
+
+    struct WatchReminderLogEntry: Codable {
+        var id: UUID
+        var content: String
+        var presetTime: Date
+        var sentTime: Date
+        var sentSuccessfully: Bool
+        var source: String
+
+        init(content: String, presetTime: Date, sentTime: Date, sentSuccessfully: Bool, source: String) {
+            self.id = UUID()
+            self.content = content
+            self.presetTime = presetTime
+            self.sentTime = sentTime
+            self.sentSuccessfully = sentSuccessfully
+            self.source = source
+        }
+    }
+
     struct SyncMessage: Codable {
         let activityTypes: [SyncedActivityType]
         let activeRecords: [SyncedActivityRecord]
         let completedRecords: [SyncedActivityRecord]
+        let reminders: [SyncedReminder]
         let timestamp: Date
     }
 
-    private let delegateBox = DelegateBox()
+    private nonisolated let delegateBox = DelegateBox()
 
     private init() {
         delegateBox.syncManager = self
@@ -100,7 +126,38 @@ class WatchSyncManager {
         }
     }
 
+    func sendReminderLog(_ log: WatchReminderLogEntry) {
+        guard let data = try? JSONEncoder().encode(log) else { return }
+        let session = WCSession.default
+        let userInfo: [String: Any] = ["action": "reminderLog", "log": data]
+        if session.isReachable {
+            session.sendMessage(userInfo, replyHandler: nil, errorHandler: nil)
+        } else {
+            session.transferUserInfo(userInfo)
+        }
+    }
+
+    func sendWatchStatus(_ status: [String: Any]) {
+        let session = WCSession.default
+        let payload: [String: Any] = ["watchStatus": status]
+        if session.isReachable {
+            session.sendMessage(payload, replyHandler: nil, errorHandler: nil)
+        } else {
+            session.transferUserInfo(payload)
+        }
+    }
+
     func handleReceivedPayload(_ payload: [String: Any]) {
+        if let action = payload["action"] as? String, action == "reminderTest" {
+            Task { @MainActor in
+                onReminderTest?()
+            }
+        }
+        if let action = payload["action"] as? String, action == "queryWatchStatus" {
+            Task { @MainActor in
+                onQueryWatchStatus?()
+            }
+        }
         if let data = payload["activityData"] as? Data {
             lastSyncDate = Date()
             Task { @MainActor in
@@ -110,10 +167,10 @@ class WatchSyncManager {
     }
 }
 
-class DelegateBox: NSObject, WCSessionDelegate {
+class DelegateBox: NSObject, WCSessionDelegate, @unchecked Sendable {
     weak var syncManager: WatchSyncManager?
 
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+    nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         Task { @MainActor in
             syncManager?.isReachable = session.isReachable
             syncManager?.onReachabilityChange?(session.isReachable)
@@ -121,21 +178,22 @@ class DelegateBox: NSObject, WCSessionDelegate {
         print("[Watch Sync] WCSession activated: state=\(activationState.rawValue), reachable=\(session.isReachable)")
     }
 
-    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         print("[Watch Sync] received message: \(message.keys.sorted())")
         syncManager?.handleReceivedPayload(message)
     }
 
-    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         print("[Watch Sync] received userInfo: \(userInfo.keys.sorted())")
         syncManager?.handleReceivedPayload(userInfo)
     }
 
-    func sessionReachabilityDidChange(_ session: WCSession) {
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         Task { @MainActor in
             syncManager?.isReachable = session.isReachable
             syncManager?.onReachabilityChange?(session.isReachable)
         }
         print("[Watch Sync] reachability changed: \(session.isReachable)")
     }
+
 }

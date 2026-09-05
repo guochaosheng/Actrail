@@ -1,114 +1,78 @@
 import Foundation
 import AlarmKit
 
-nonisolated struct ActivityAlarmMetadata: AlarmMetadata {
-    let activityName: String
-    let activityIconName: String
-    let activityColor: String
+nonisolated struct ActrailAlarmMetadata: AlarmMetadata {
     let reminderId: String
 }
 
-class AlarmKitManager {
+final class AlarmKitManager {
     static let shared = AlarmKitManager()
-    private let alarmManager = AlarmManager.shared
-    
-    var authorizationStateDescription: String {
-        switch alarmManager.authorizationState {
-        case .authorized: return "已授权"
-        case .denied: return "已拒绝（需到系统设置中开启）"
-        case .notDetermined: return "未确定（待请求）"
-        @unknown default: return "未知"
-        }
+    let alarmManager = AlarmManager.shared
+
+    var authorizationState: AlarmManager.AuthorizationState {
+        alarmManager.authorizationState
     }
-    
+
     var isAuthorized: Bool {
         if case .authorized = alarmManager.authorizationState {
             return true
         }
         return false
     }
-    
+
     func ensureAuthorized() async -> Bool {
         let state = alarmManager.authorizationState
-        print("[AlarmKit] ensureAuthorized - state: \(state)")
         switch state {
         case .authorized:
             return true
         case .denied:
-            print("[AlarmKit] Denied - user must enable in Settings")
+            print("[AlarmKit] Denied")
             return false
         case .notDetermined:
-            return await requestAuthorization()
+            do {
+                let result = try await alarmManager.requestAuthorization()
+                return result == .authorized
+            } catch {
+                print("[AlarmKit] Auth error: \(error)")
+                return false
+            }
         @unknown default:
-            return await requestAuthorization()
-        }
-    }
-    
-    func requestAuthorization() async -> Bool {
-        print("[AlarmKit] Requesting authorization... (current state: \(alarmManager.authorizationState))")
-        do {
-            let state = try await alarmManager.requestAuthorization()
-            print("[AlarmKit] Auth result: \(state)")
-            return state == .authorized
-        } catch {
-            print("[AlarmKit] Authorization error: \(error)")
             return false
         }
     }
-    
-    func scheduleAlarm(
-        id: UUID,
-        hour: Int,
-        minute: Int,
-        activityName: String,
-        activityIconName: String,
-        activityColor: String,
-        reminderId: String
-    ) async throws {
-        print("[AlarmKit] Scheduling daily alarm for \(hour):\(minute)")
-        
+
+    private func makeConfiguration(date: Date, reminderId: String) async throws -> AlarmManager.AlarmConfiguration<ActrailAlarmMetadata> {
         let alert = AlarmPresentation.Alert(
-            title: "该开始\(activityName)了"
+            title: "行迹闹钟",
+            stopButton: AlarmButton(text: "停止", textColor: .white, systemImageName: "stop")
         )
-        
-        let metadata = ActivityAlarmMetadata(
-            activityName: activityName,
-            activityIconName: activityIconName,
-            activityColor: activityColor,
-            reminderId: reminderId
-        )
-        
+        let metadata = ActrailAlarmMetadata(reminderId: reminderId)
         let attributes = AlarmAttributes(
             presentation: AlarmPresentation(alert: alert),
             metadata: metadata,
             tintColor: .blue
         )
-        
-        let time = Alarm.Schedule.Relative.Time(hour: hour, minute: minute)
-        let recurrence = Alarm.Schedule.Relative.Recurrence.weekly([
-            .sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday
-        ])
-        let schedule = Alarm.Schedule.relative(
-            .init(time: time, repeats: recurrence)
-        )
-        
-        let config = AlarmManager.AlarmConfiguration(
+        let schedule = Alarm.Schedule.fixed(date)
+        return AlarmManager.AlarmConfiguration(
             schedule: schedule,
             attributes: attributes,
             sound: .default
         )
-        
-        let alarm = try await alarmManager.schedule(id: id, configuration: config)
-        print("[AlarmKit] Daily alarm scheduled: \(alarm)")
     }
-    
-    func cancelAlarm(id: UUID) async throws {
-        try await alarmManager.cancel(id: id)
-        print("[AlarmKit] Alarm cancelled: \(id)")
+
+    func scheduleAlarm(id: UUID, date: Date, reminderId: String) async throws {
+        let configuration = try await makeConfiguration(date: date, reminderId: reminderId)
+        _ = try await alarmManager.schedule(id: id, configuration: configuration)
+        DiagnosticLog.append(tag: "AlarmKitAPI", message: "scheduleAlarm 成功 id=\(id.uuidString.prefix(8)) date=\(date)")
     }
-    
-    func stopAlarm(id: UUID) async throws {
-        try await alarmManager.stop(id: id)
-        print("[AlarmKit] Alarm stopped: \(id)")
+
+    func cancelAlarm(id: UUID) {
+        DiagnosticLog.append(tag: "AlarmKitAPI", message: "cancelAlarm \(id.uuidString.prefix(8))")
+        try? alarmManager.cancel(id: id)
+    }
+
+    func stopAlarm(id: UUID) {
+        DiagnosticLog.append(tag: "AlarmKitAPI", message: "stopAlarm \(id.uuidString.prefix(8))")
+        try? alarmManager.stop(id: id)
     }
 }

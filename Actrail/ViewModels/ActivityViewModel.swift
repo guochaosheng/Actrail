@@ -2,31 +2,25 @@ import Foundation
 import SwiftData
 import SwiftUI
 import UserNotifications
-import CoreHaptics
-import AudioToolbox
-import UIKit
 
-class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    var onNotificationFiredForeground: ((UNNotification) -> Void)?
-    var onNotificationOpened: ((UNNotificationResponse) -> Void)?
+class ReminderNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    var onTriggered: ((UNNotification) -> Void)?
+    var onTapped: ((UNNotificationResponse) -> Void)?
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .badge, .sound, .list])
         let n = notification
         DispatchQueue.main.async { [weak self] in
-            self?.onNotificationFiredForeground?(n)
+            self?.onTriggered?(n)
         }
+        completionHandler([.banner, .sound, .list])
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let resp = response
         DispatchQueue.main.async { [weak self] in
-            self?.onNotificationOpened?(resp)
+            self?.onTapped?(resp)
         }
         completionHandler()
-    }
-
-    func userNotificationCenter(_ center: UNUserNotificationCenter, openSettingsFor notification: UNNotification?) {
     }
 }
 
@@ -36,33 +30,25 @@ class ActivityViewModel {
     var activeRecords: [ActivityRecord] = []
     var todayRecords: [ActivityRecord] = []
     var reminders: [ActivityReminder] = []
+    var reminderLogs: [ReminderLogEntry] = []
     var selectedDate: Date = Date()
     var isWatchReachable = false
-
-    var activeVibrationAlert: VibrationAlert?
+    var watchStatusString = "尚未查询"
 
     private var modelContext: ModelContext?
     private let syncManager = WatchSyncManager.shared
     private var syncTimer: Timer?
-    private let notificationDelegate = NotificationDelegate()
-    private var hapticEngine: CHHapticEngine?
-    private var hapticPlayer: CHHapticAdvancedPatternPlayer?
     private var isAppReady = false
+    private let reminderDelegate = ReminderNotificationDelegate()
 
     private var cachedTypes: [WatchSyncManager.SyncedActivityType] = []
     private var cachedActiveRecords: [WatchSyncManager.SyncedActivityRecord] = []
     private var cachedCompletedRecords: [WatchSyncManager.SyncedActivityRecord] = []
+    private var cachedReminders: [WatchSyncManager.SyncedReminder] = []
 
     private var safeTypeValues: [(id: UUID, name: String, iconName: String, color: String, group: String)] = []
     private var safeRecordValues: [(id: UUID, activityTypeId: UUID, startTime: Date, endTime: Date?, isActive: Bool, note: String)] = []
-
-    struct VibrationAlert: Identifiable {
-        let id = UUID()
-        let reminder: ActivityReminder
-        let activityName: String
-        let reminderType: ReminderType
-        let notificationIdentifier: String
-    }
+    private var lastStartActivityDate: Date = .distantPast
 
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
@@ -88,184 +74,6 @@ class ActivityViewModel {
         }
     }
 
-    func setupNotifications() {
-        let center = UNUserNotificationCenter.current()
-        center.delegate = notificationDelegate
-        center.requestAuthorization(options: [.alert, .badge, .sound]) { [weak self] granted, _ in
-            if granted {
-                DispatchQueue.main.async {
-                    self?.rescheduleAllReminders()
-                }
-            }
-        }
-
-        notificationDelegate.onNotificationFiredForeground = { [weak self] notification in
-            DispatchQueue.main.async {
-                self?.handleNotificationFired(notification)
-            }
-        }
-
-        notificationDelegate.onNotificationOpened = { [weak self] response in
-            DispatchQueue.main.async {
-                self?.handleNotificationOpened(response)
-            }
-        }
-
-        if #available(iOS 26.0, *) {
-            Task {
-                let authorized = await AlarmKitManager.shared.ensureAuthorized()
-                print("[ViewModel] AlarmKit authorization: \(authorized)")
-            }
-        }
-    }
-
-    private func cleanNotificationIdentifier(_ raw: String) -> String {
-        var id = raw.replacingOccurrences(of: "-repeat", with: "")
-        if let dashRange = id.range(of: "-r"), id[dashRange.upperBound...].allSatisfy(\.isNumber) {
-            id = String(id[id.startIndex..<dashRange.lowerBound])
-        }
-        return id
-    }
-
-    private func handleNotificationFired(_ notification: UNNotification) {
-        guard isAppReady else { return }
-        let identifier = cleanNotificationIdentifier(notification.request.identifier)
-        let userInfo = notification.request.content.userInfo
-
-        if let reminderTypeRaw = userInfo["reminderType"] as? Int,
-           let reminderType = ReminderType(rawValue: reminderTypeRaw) {
-            let activityName = userInfo["activityName"] as? String ?? "活动"
-            startContinuousVibration()
-            activeVibrationAlert = VibrationAlert(
-                reminder: ActivityReminder(activityTypeId: UUID(), activityName: activityName, activityIconName: "bell.fill", activityColor: "#FF3B30", hour: 0, minute: 0),
-                activityName: activityName,
-                reminderType: reminderType,
-                notificationIdentifier: identifier
-            )
-            return
-        }
-
-        guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
-        let reminderType = ReminderType.load(for: reminder.id)
-        if reminderType == .vibration || reminderType == .vibrationWithLongPress {
-            startContinuousVibration()
-            activeVibrationAlert = VibrationAlert(
-                reminder: reminder,
-                activityName: reminder.activityName,
-                reminderType: reminderType,
-                notificationIdentifier: identifier
-            )
-        }
-    }
-
-    private func handleNotificationOpened(_ response: UNNotificationResponse) {
-        guard isAppReady else { return }
-        let identifier = cleanNotificationIdentifier(response.notification.request.identifier)
-        let userInfo = response.notification.request.content.userInfo
-
-        if let reminderTypeRaw = userInfo["reminderType"] as? Int,
-           let reminderType = ReminderType(rawValue: reminderTypeRaw) {
-            let activityName = userInfo["activityName"] as? String ?? "活动"
-            startContinuousVibration()
-            activeVibrationAlert = VibrationAlert(
-                reminder: ActivityReminder(activityTypeId: UUID(), activityName: activityName, activityIconName: "bell.fill", activityColor: "#FF3B30", hour: 0, minute: 0),
-                activityName: activityName,
-                reminderType: reminderType,
-                notificationIdentifier: identifier
-            )
-            return
-        }
-
-        guard let reminder = reminders.first(where: { $0.id.uuidString == identifier }) else { return }
-        let reminderType = ReminderType.load(for: reminder.id)
-        if reminderType == .vibration || reminderType == .vibrationWithLongPress {
-            startContinuousVibration()
-            activeVibrationAlert = VibrationAlert(
-                reminder: reminder,
-                activityName: reminder.activityName,
-                reminderType: reminderType,
-                notificationIdentifier: identifier
-            )
-        }
-    }
-
-    func startContinuousVibration() {
-        stopHapticsOnly()
-
-        if CHHapticEngine.capabilitiesForHardware().supportsHaptics {
-            do {
-                let engine = try CHHapticEngine()
-                try engine.start()
-
-                engine.stoppedHandler = { [weak self] _ in
-                    DispatchQueue.main.async {
-                        self?.startSystemVibrationLoop()
-                    }
-                }
-
-                let pattern = try CHHapticPattern(events: [
-                    CHHapticEvent(eventType: .hapticContinuous, parameters: [
-                        CHHapticEventParameter(parameterID: .hapticIntensity, value: 1.0),
-                        CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.5)
-                    ], relativeTime: 0, duration: 60)
-                ], parameters: [])
-
-                let player = try engine.makeAdvancedPlayer(with: pattern)
-                try player.start(atTime: CHHapticTimeImmediate)
-                hapticPlayer = player
-                hapticEngine = engine
-            } catch {
-                startSystemVibrationLoop()
-            }
-        } else {
-            startSystemVibrationLoop()
-        }
-    }
-
-    private var vibrationTimer: Timer?
-
-    private func startSystemVibrationLoop() {
-        vibrationTimer?.invalidate()
-        vibrationTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
-        }
-        AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
-    }
-
-    private func stopHapticsOnly() {
-        vibrationTimer?.invalidate()
-        vibrationTimer = nil
-        if let player = hapticPlayer {
-            try? player.stop(atTime: CHHapticTimeImmediate)
-            hapticPlayer = nil
-        }
-        if let engine = hapticEngine {
-            try? engine.stop()
-            hapticEngine = nil
-        }
-    }
-
-    func stopVibration() {
-        stopHapticsOnly()
-        if let alert = activeVibrationAlert {
-            var identifiers = [alert.notificationIdentifier]
-            for i in 1...10 {
-                identifiers.append("\(alert.notificationIdentifier)-r\(i)")
-            }
-            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
-        }
-        activeVibrationAlert = nil
-    }
-
-    private func rescheduleAllReminders() {
-        for reminder in reminders {
-            if reminder.isEnabled {
-                scheduleNotification(for: reminder)
-            }
-        }
-    }
-
     private func setupSyncManager() {
         syncManager.startActivityUpdateHandler { [weak self] types, records in
             Task { @MainActor in
@@ -279,6 +87,18 @@ class ActivityViewModel {
             }
         }
 
+        syncManager.onReminderLogReceived = { [weak self] log in
+            Task { @MainActor in
+                self?.appendReminderLog(log)
+            }
+        }
+
+        syncManager.onWatchStatusReceived = { [weak self] status in
+            Task { @MainActor in
+                self?.presentWatchStatus(status)
+            }
+        }
+
         isWatchReachable = syncManager.isReachable
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
@@ -288,6 +108,7 @@ class ActivityViewModel {
                     guard let self, self.modelContext != nil else { return }
                     self.rebuildCache()
                     self.sendSync()
+                    self.cancelExpiredAlarms()
                 }
             }
         }
@@ -337,37 +158,35 @@ class ActivityViewModel {
         cachedCompletedRecords = safeRecordValues.filter { !$0.isActive }.prefix(50).map { v in
             WatchSyncManager.SyncedActivityRecord(id: v.id, activityTypeId: v.activityTypeId, startTime: v.startTime, endTime: v.endTime, isActive: v.isActive, note: v.note)
         }
+
+        cachedReminders = reminders.filter(\.isEnabled).map { reminder in
+            WatchSyncManager.SyncedReminder(
+                id: reminder.id,
+                date: reminder.date
+            )
+        }
     }
 
     private func sendSync() {
         syncManager.sendActivityUpdate(
             types: cachedTypes,
             activeRecords: cachedActiveRecords,
-            completedRecords: cachedCompletedRecords
+            completedRecords: cachedCompletedRecords,
+            reminders: cachedReminders
         )
     }
 
     // MARK: - Handle data received from Watch
 
-    private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], records: [WatchSyncManager.SyncedActivityRecord]) {
-        guard let context = modelContext else { return }
-
+private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], records: [WatchSyncManager.SyncedActivityRecord]) {
+        // iPhone 是记录的唯一数据源。Watch 端开始/停止活动通过 action 消息到达，
+        // 由 handleWatchAction 创建/停止记录。这里只做内存展示层面的对账，
+        // 绝不创建新的持久化记录，否则一次过期的反向同步会把所有类型的活动
+        // 批量写入（产生“点一个活动，全部类型都出现在正在进行”的幽灵记录）。
         for syncRecord in records where syncRecord.isActive {
-            if !activeRecords.contains(where: { $0.id == syncRecord.id }) {
-                if let type = activityTypes.first(where: { $0.id == syncRecord.activityTypeId }) {
-                    let newRecord = ActivityRecord(
-                        activityType: type,
-                        startTime: syncRecord.startTime
-                    )
-                    newRecord.id = syncRecord.id
-                    context.insert(newRecord)
-                    try? context.save()
-                    activeRecords.append(newRecord)
-                    todayRecords.insert(newRecord, at: 0)
-                    if let typeId = newRecord.activityType?.id {
-                        safeRecordValues.append((id: newRecord.id, activityTypeId: typeId, startTime: newRecord.startTime, endTime: newRecord.endTime, isActive: newRecord.isActive, note: newRecord.note))
-                    }
-                }
+            if let existing = activeRecords.first(where: { $0.id == syncRecord.id }), existing.isActive == false {
+                existing.isActive = true
+                existing.endTime = nil
             }
         }
         rebuildCache()
@@ -442,9 +261,26 @@ class ActivityViewModel {
     func startActivity(_ type: ActivityType) {
         guard let context = modelContext else { return }
 
+        // 用户点击活动按钮 = 开始工作 = 立即取消闹钟振动
+        // 不检查 activeRecords，因为新活动记录尚未创建
+        for reminder in reminders where reminder.alarmEnabled {
+            DiagnosticLog.append(tag: "AlarmCancel", message: "startActivity 无条件取消闹钟 id=\(reminder.id.uuidString.prefix(8))")
+            AlarmKitManager.shared.stopAlarm(id: reminder.id)
+            markAlarmCancelled(reminderID: reminder.id)
+        }
+
         if activeRecords.contains(where: { $0.activityType?.id == type.id && $0.isActive }) {
             return
         }
+
+        // 一次用户点击会触发 SwiftUI 对该网格的所有按钮重放（同一瞬间为每个活动类型
+        // 各调用一次 startActivity）。用时间窗口合并，只保留第一个，避免点一个活动却
+        // 把 6 种类型全部加入“正在进行”。
+        let now = Date()
+        if now.timeIntervalSince(lastStartActivityDate) < 0.8 {
+            return
+        }
+        lastStartActivityDate = now
 
         let record = ActivityRecord(activityType: type)
         context.insert(record)
@@ -531,79 +367,27 @@ class ActivityViewModel {
         reminders = ActivityReminder.loadAll()
     }
 
-    func addReminder(activityTypeId: UUID, activityName: String, activityIconName: String, activityColor: String, hour: Int, minute: Int, reminderType: ReminderType = .notification) {
-        let reminder = ActivityReminder(
-            activityTypeId: activityTypeId,
-            activityName: activityName,
-            activityIconName: activityIconName,
-            activityColor: activityColor,
-            hour: hour,
-            minute: minute
-        )
+    func addReminder(date: Date, alarmEnabled: Bool = false, alarmGraceMinutes: Int = 5) {
+        let reminder = ActivityReminder(date: date, alarmEnabled: alarmEnabled, alarmGraceMinutes: alarmGraceMinutes)
         reminders.append(reminder)
         ActivityReminder.saveAll(reminders)
-        ReminderType.save(type: reminderType, for: reminder.id)
-        
-        if reminderType == .vibration || reminderType == .vibrationWithLongPress {
-            scheduleAlarmKitAlarm(for: reminder, reminderType: reminderType)
-        } else {
-            scheduleNotification(for: reminder)
-        }
-    }
-    
-    private func scheduleAlarmKitAlarm(for reminder: ActivityReminder, reminderType: ReminderType) {
-        scheduleNotification(for: reminder)
-        
-        guard #available(iOS 26.0, *) else {
-            print("[AlarmKit] iOS < 26, notification-only mode")
-            return
-        }
-        
-        print("[AlarmKit] Also attempting AlarmKit schedule...")
-        let manager = AlarmKitManager.shared
-        
-        Task {
-            let authorized = await manager.ensureAuthorized()
-            guard authorized else {
-                print("[AlarmKit] Not authorized, using notification-only")
-                return
-            }
-            
-            do {
-                try await manager.scheduleAlarm(
-                    id: reminder.id,
-                    hour: reminder.hour,
-                    minute: reminder.minute,
-                    activityName: reminder.activityName,
-                    activityIconName: reminder.activityIconName,
-                    activityColor: reminder.activityColor,
-                    reminderId: reminder.id.uuidString
-                )
-                print("[AlarmKit] Daily alarm scheduled!")
-            } catch {
-                print("[AlarmKit] Schedule failed (notification still active): \(error)")
-            }
-        }
+        schedulePhoneNotification(for: reminder)
+        pushRemindersToWatch()
+        logWatchSchedule(date: date)
     }
 
     func deleteReminder(_ reminder: ActivityReminder) {
-        cancelNotification(for: reminder)
-        cancelAlarmKitAlarm(for: reminder)
-        ReminderType.remove(for: reminder.id)
         reminders.removeAll { $0.id == reminder.id }
         ActivityReminder.saveAll(reminders)
+        cancelPhoneNotification(for: reminder)
+        pushRemindersToWatch()
     }
-    
-    private func cancelAlarmKitAlarm(for reminder: ActivityReminder) {
-        guard #available(iOS 26.0, *) else { return }
-        
-        Task { @MainActor in
-            do {
-                try await AlarmKitManager.shared.cancelAlarm(id: reminder.id)
-            } catch {
-                print("[AlarmKit] Failed to cancel alarm: \(error)")
-            }
-        }
+
+    // MARK: - Watch Reminder
+
+    private func pushRemindersToWatch() {
+        rebuildCache()
+        sendSync()
     }
 
     func toggleReminder(_ reminder: ActivityReminder) {
@@ -611,113 +395,311 @@ class ActivityViewModel {
             reminders[index].isEnabled.toggle()
             ActivityReminder.saveAll(reminders)
             if reminders[index].isEnabled {
-                let reminderType = ReminderType.load(for: reminder.id)
-                if reminderType == .vibration || reminderType == .vibrationWithLongPress {
-                    scheduleAlarmKitAlarm(for: reminders[index], reminderType: reminderType)
-                } else {
-                    scheduleNotification(for: reminders[index])
-                }
+                schedulePhoneNotification(for: reminders[index])
             } else {
-                cancelNotification(for: reminder)
-                cancelAlarmKitAlarm(for: reminder)
+                cancelPhoneNotification(for: reminders[index])
+            }
+            pushRemindersToWatch()
+        }
+    }
+
+    func testReminderOnWatch() {
+        pushRemindersToWatch()
+        syncManager.sendReminderTest()
+    }
+
+    func rescheduleAllPhoneNotificationsPublic() {
+        setupReminderNotifications()
+    }
+
+    func requestWatchStatus() {
+        watchStatusString = "查询中…"
+        syncManager.requestWatchStatus()
+    }
+
+    private func presentWatchStatus(_ status: [String: Any]) {
+        let pieces = status.sorted { $0.key < $1.key }.map { key, value in
+            "\(key): \(value)"
+        }
+        watchStatusString = pieces.joined(separator: "\n")
+    }
+
+    // MARK: - iPhone Local Notifications
+
+    func setupReminderNotifications() {
+        reminderLogs = ReminderLogEntry.loadAll()
+        let center = UNUserNotificationCenter.current()
+        center.delegate = reminderDelegate
+
+        reminderDelegate.onTriggered = { [weak self] notification in
+            DispatchQueue.main.async {
+                self?.logPhoneNotificationFired(notification)
+            }
+        }
+
+        reminderDelegate.onTapped = { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.logPhoneNotificationTapped()
+            }
+        }
+
+        let centerGet = UNUserNotificationCenter.current()
+        centerGet.getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    self?.rescheduleAllPhoneNotifications()
+                case .notDetermined:
+                    centerGet.requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+                        DispatchQueue.main.async {
+                            guard granted else { return }
+                            self?.rescheduleAllPhoneNotifications()
+                        }
+                    }
+                case .denied:
+                    break
+                @unknown default:
+                    break
+                }
             }
         }
     }
 
-    private func scheduleNotification(for reminder: ActivityReminder) {
+    private func logPhoneNotificationFired(_ notification: UNNotification) {
+        let contentObject = notification.request.content
+        let presetTime = contentObject.userInfo["presetTime"] as? Date ?? Date()
+        let content = contentObject.body.isEmpty
+            ? contentObject.title
+            : contentObject.body
+        let entry = ReminderLogEntry(
+            content: content,
+            presetTime: presetTime,
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "iPhone 本地通知"
+        )
+        appendReminderLog(entry)
+    }
+
+    private func appendReminderLog(_ entry: ReminderLogEntry) {
+        if entry.source == "iPhone 计划" || entry.source == "iWatch 计划" {
+            let alreadyExists = reminderLogs.contains { existing in
+                existing.source == entry.source &&
+                existing.content == entry.content &&
+                Calendar.current.isDate(existing.presetTime, inSameDayAs: Date())
+            }
+            if alreadyExists { return }
+        }
+        reminderLogs.insert(entry, at: 0)
+        if reminderLogs.count > 50 {
+            reminderLogs = Array(reminderLogs.prefix(50))
+        }
+        ReminderLogEntry.saveAll(reminderLogs)
+    }
+
+    func deleteReminderLog(_ log: ReminderLogEntry) {
+        reminderLogs.removeAll { $0.id == log.id }
+        ReminderLogEntry.saveAll(reminderLogs)
+    }
+
+    func logWatchSchedule(date: Date) {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm"
+        let content = "iWatch 排定提醒 \(f.string(from: date))（等待系统投递）"
+        let entry = ReminderLogEntry(
+            content: content,
+            presetTime: Date(),
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "iWatch 计划"
+        )
+        appendReminderLog(entry)
+    }
+
+    private func logPhoneNotificationTapped() {
+        let entry = ReminderLogEntry(
+            content: "已确认收到提醒",
+            presetTime: Date(),
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "iPhone 已确认"
+        )
+        appendReminderLog(entry)
+    }
+
+    private func rescheduleAllPhoneNotifications() {
+        for reminder in reminders where reminder.isEnabled {
+            schedulePhoneNotification(for: reminder)
+        }
+    }
+
+    private func schedulePhoneNotification(for reminder: ActivityReminder) {
         guard reminder.isEnabled else { return }
-        let reminderType = ReminderType.load(for: reminder.id)
 
-        let content = UNMutableNotificationContent()
-        content.title = "行迹提醒"
-        content.body = "该开始\(reminder.activityName)了"
-        content.categoryIdentifier = "ACTIVITY_REMINDER"
-        content.userInfo = ["reminderId": reminder.id.uuidString]
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            guard let self else { return }
+            guard settings.authorizationStatus == .authorized ||
+                  settings.authorizationStatus == .provisional ||
+                  settings.authorizationStatus == .ephemeral else {
+                print("[Reminder] permission not granted, cannot schedule \(reminder.id)")
+                return
+            }
 
-        let calendar = Calendar.current
-        var dateComponents = DateComponents()
-        dateComponents.calendar = calendar
-        dateComponents.hour = reminder.hour
-        dateComponents.minute = reminder.minute
+            // 检查提醒时间是否已过
+            guard reminder.date > Date() else {
+                print("[Reminder] \(reminder.id) already past, skipping")
+                return
+            }
 
-        switch reminderType {
-        case .notification:
+            let content = UNMutableNotificationContent()
+            content.title = "行迹提醒"
+            content.body = "请检查当前正在进行的活动是否正确"
             content.sound = .default
-            content.interruptionLevel = .timeSensitive
-            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
-            let request = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
-            UNUserNotificationCenter.current().add(request) { error in
+            content.userInfo = ["presetTime": reminder.date]
+
+            let dateComponents = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: reminder.date
+            )
+
+            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
+            let request = UNNotificationRequest(
+                identifier: "reminder-\(reminder.id.uuidString)",
+                content: content,
+                trigger: trigger
+            )
+            UNUserNotificationCenter.current().add(request) { [weak self] error in
+                guard let self else { return }
                 if let error = error {
-                    print("[Reminder] schedule failed: \(error)")
-                }
-            }
-
-        case .vibration, .vibrationWithLongPress:
-            content.sound = .default
-            content.interruptionLevel = .timeSensitive
-            content.userInfo["isRepeating"] = true
-            content.userInfo["reminderType"] = reminderType.rawValue
-            content.userInfo["activityName"] = reminder.activityName
-
-            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
-            let request = UNNotificationRequest(identifier: reminder.id.uuidString, content: content, trigger: trigger)
-            UNUserNotificationCenter.current().add(request) { error in
-                if let error = error {
-                    print("[Reminder] vibration schedule failed: \(error)")
-                }
-            }
-
-            var fireDate = calendar.date(from: dateComponents) ?? Date()
-            if fireDate <= Date() {
-                fireDate = calendar.date(byAdding: .day, value: 1, to: fireDate) ?? fireDate
-            }
-
-            let vibrationMessages = [
-                "该开始\(reminder.activityName)了！",
-                "⏰ \(reminder.activityName)时间到！",
-                "别忘了\(reminder.activityName)哦！",
-                "\(reminder.activityName)提醒 - 请开始吧！",
-                "还有\(reminder.activityName)没完成呢！",
-                "重要提醒：\(reminder.activityName)",
-                "\(reminder.activityName)时间到了！",
-                "请立即开始\(reminder.activityName)！"
-            ]
-
-            for i in 1...10 {
-                let repeatContent = UNMutableNotificationContent()
-                repeatContent.title = "行迹提醒"
-                repeatContent.body = vibrationMessages[(i - 1) % vibrationMessages.count]
-                repeatContent.sound = .default
-                repeatContent.interruptionLevel = .timeSensitive
-                repeatContent.badge = 1
-                repeatContent.userInfo = [
-                    "reminderId": reminder.id.uuidString,
-                    "isRepeating": true,
-                    "reminderType": reminderType.rawValue,
-                    "activityName": reminder.activityName,
-                    "repeatIndex": i
-                ]
-                let repeatDate = fireDate.addingTimeInterval(TimeInterval(i * 3))
-                let interval = repeatDate.timeIntervalSinceNow
-                guard interval > 0 else { continue }
-                let repeatTrigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
-                let repeatRequest = UNNotificationRequest(identifier: "\(reminder.id.uuidString)-r\(i)", content: repeatContent, trigger: repeatTrigger)
-                UNUserNotificationCenter.current().add(repeatRequest) { error in
-                    if let error = error {
-                        print("[Reminder] repeat-\(i) schedule failed: \(error)")
+                    print("[Reminder] schedule failed for \(reminder.id): \(error)")
+                } else {
+                    let f = DateFormatter()
+                    f.dateFormat = "MM/dd HH:mm"
+                    print("[Reminder] scheduled \(reminder.id) for \(f.string(from: reminder.date))")
+                    let entry = ReminderLogEntry(
+                        content: "已安排提醒 \(f.string(from: reminder.date))（等待系统投递）",
+                        presetTime: reminder.date,
+                        sentTime: Date(),
+                        sentSuccessfully: true,
+                        source: "iPhone 计划"
+                    )
+                    DispatchQueue.main.async {
+                        self.appendReminderLog(entry)
+                        print("[Reminder] alarmEnabled=\(reminder.alarmEnabled), grace=\(reminder.alarmGraceMinutes)min")
+                        if reminder.alarmEnabled {
+                            DiagnosticLog.append(tag: "AlarmSchedule", message: "alarmEnabled=true → 调用 scheduleAlarm id=\(reminder.id.uuidString.prefix(8))")
+                            self.scheduleAlarm(for: reminder)
+                        } else {
+                            DiagnosticLog.append(tag: "AlarmCancel", message: "alarmEnabled=false → cancelAlarm id=\(reminder.id.uuidString.prefix(8))")
+                            AlarmKitManager.shared.cancelAlarm(id: reminder.id)
+                        }
                     }
                 }
             }
         }
     }
 
-    private func cancelNotification(for reminder: ActivityReminder) {
-        var identifiers = [reminder.id.uuidString]
-        for i in 1...10 {
-            identifiers.append("\(reminder.id.uuidString)-r\(i)")
+    private func scheduleAlarm(for reminder: ActivityReminder) {
+        DiagnosticLog.append(tag: "AlarmSchedule", message: "scheduleAlarm 进入 id=\(reminder.id.uuidString.prefix(8)) enabled=\(reminder.alarmEnabled) grace=\(reminder.alarmGraceMinutes)")
+        Task {
+            let authed = await AlarmKitManager.shared.ensureAuthorized()
+            DiagnosticLog.append(tag: "AlarmSchedule", message: "ensureAuthorized=\(authed)")
+            guard authed else {
+                DiagnosticLog.append(tag: "AlarmSchedule", message: "未授权，跳过 alarm \(reminder.id.uuidString.prefix(8))")
+                return
+            }
+            let alarmDate = Calendar.current.date(
+                byAdding: .minute,
+                value: reminder.alarmGraceMinutes,
+                to: reminder.date
+            ) ?? reminder.date
+            let f = DateFormatter()
+            f.dateFormat = "MM/dd HH:mm:ss"
+            DiagnosticLog.append(tag: "AlarmSchedule", message: "排定闹钟 \(f.string(from: alarmDate)) (reminder=\(f.string(from: reminder.date)), grace=\(reminder.alarmGraceMinutes)min)")
+            do {
+                try await AlarmKitManager.shared.scheduleAlarm(
+                    id: reminder.id,
+                    date: alarmDate,
+                    reminderId: reminder.id.uuidString
+                )
+                DiagnosticLog.append(tag: "AlarmSchedule", message: "✓ 闹钟排定成功 id=\(reminder.id.uuidString.prefix(8))")
+                appendAlarmPlan(reminder: reminder, alarmDate: alarmDate)
+            } catch {
+                DiagnosticLog.append(tag: "AlarmSchedule", message: "✗ 排定失败: \(error.localizedDescription)")
+                appendReminderLog(ReminderLogEntry(
+                    content: "闹钟排定失败（\(error.localizedDescription)）",
+                    presetTime: Date(),
+                    sentTime: Date(),
+                    sentSuccessfully: false,
+                    source: "闹钟计划"
+                ))
+            }
         }
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+
+    func stopAlarmIfActiveActivity() {
+        cancelExpiredAlarms()
+    }
+
+    private func cancelExpiredAlarms() {
+        let now = Date()
+        for reminder in reminders where reminder.alarmEnabled && reminder.isEnabled {
+            if now > reminder.date {
+                let alreadyCancelled = reminderLogs.contains {
+                    $0.reminderID == reminder.id && $0.status == "已取消"
+                }
+                if !alreadyCancelled {
+                    AlarmKitManager.shared.cancelAlarm(id: reminder.id)
+                    markAlarmCancelled(reminderID: reminder.id)
+                }
+            }
+        }
+    }
+
+    private func appendAlarmPlan(reminder: ActivityReminder, alarmDate: Date) {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm"
+        let content = "闹钟已排定 \(f.string(from: reminder.date)) + \(reminder.alarmGraceMinutes) 分钟 → \(f.string(from: alarmDate))"
+        DispatchQueue.main.async {
+            self.appendReminderLog(ReminderLogEntry(
+                content: content,
+                presetTime: Date(),
+                sentTime: Date(),
+                sentSuccessfully: true,
+                source: "闹钟计划",
+                status: "计划中",
+                reminderID: reminder.id
+            ))
+        }
+    }
+
+    private func markAlarmCancelled(reminderID: UUID) {
+        DispatchQueue.main.async {
+            if let index = self.reminderLogs.firstIndex(where: {
+                $0.reminderID == reminderID && $0.source == "闹钟计划" && $0.status == "计划中"
+            }) {
+                self.reminderLogs[index].status = "已取消"
+                self.reminderLogs[index].sentTime = Date()
+                ReminderLogEntry.saveAll(self.reminderLogs)
+            } else {
+                self.appendReminderLog(ReminderLogEntry(
+                    content: "闹钟已停止（打开 App 且存在进行中活动）",
+                    presetTime: Date(),
+                    sentTime: Date(),
+                    sentSuccessfully: true,
+                    source: "闹钟已取消",
+                    status: "已取消",
+                    reminderID: reminderID
+                ))
+            }
+        }
+    }
+
+    private func cancelPhoneNotification(for reminder: ActivityReminder) {
+        DiagnosticLog.append(tag: "AlarmCancel", message: "cancelPhoneNotification id=\(reminder.id.uuidString.prefix(8))")
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: ["reminder-\(reminder.id.uuidString)"])
+        AlarmKitManager.shared.cancelAlarm(id: reminder.id)
     }
 
     // MARK: - Formatting
@@ -757,7 +739,9 @@ class ActivityViewModel {
             ActivityType(name: "通勤", iconName: "car.fill", color: "#8E8E93", group: "生活")
         ]
 
-        for type in sampleTypes {
+        let now = Date()
+        for (index, type) in sampleTypes.enumerated() {
+            type.createdAt = now.addingTimeInterval(TimeInterval(index))
             context.insert(type)
         }
 

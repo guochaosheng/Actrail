@@ -1,9 +1,9 @@
 import SwiftUI
 import SwiftData
-import UserNotifications
 
 @main
 struct ActrailApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel = ActivityViewModel()
     @State private var syncManager = WatchSyncManager.shared
 
@@ -45,7 +45,12 @@ struct ActrailApp: App {
             ContentView(viewModel: viewModel)
                 .onAppear {
                     syncManager.startSession()
-                    viewModel.setupNotifications()
+                    viewModel.setupReminderNotifications()
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        viewModel.stopAlarmIfActiveActivity()
+                    }
                 }
         }
         .modelContainer(modelContainer)
