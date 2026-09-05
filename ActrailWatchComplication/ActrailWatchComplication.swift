@@ -53,6 +53,8 @@ enum AppGroupConstant {
     static let suiteName = "group.com.actrail.app"
     static let todayTotalMinutesKey = "todayTotalMinutes"
     static let activeActivityNameKey = "activeActivityName"
+    static let activeStartDateKey = "activeStartDate"
+    static let activeBaseMinutesKey = "activeBaseMinutes"
 }
 
 struct ActivityTimelineProvider: TimelineProvider {
@@ -60,18 +62,47 @@ struct ActivityTimelineProvider: TimelineProvider {
         UserDefaults(suiteName: AppGroupConstant.suiteName)?.integer(forKey: AppGroupConstant.todayTotalMinutesKey) ?? 0
     }
 
+    func sharedActiveStart() -> Date? {
+        UserDefaults(suiteName: AppGroupConstant.suiteName)?.object(forKey: AppGroupConstant.activeStartDateKey) as? Date
+    }
+
+    func sharedActiveBase() -> Int {
+        UserDefaults(suiteName: AppGroupConstant.suiteName)?.integer(forKey: AppGroupConstant.activeBaseMinutesKey) ?? sharedTotalMinutes()
+    }
+
+    func currentEntry() -> ActivityEntry {
+        if let start = sharedActiveStart() {
+            let base = sharedActiveBase()
+            let minutes = base + Int(Date().timeIntervalSince(start)) / 60
+            return ActivityEntry(date: Date(), totalMinutes: minutes)
+        }
+        return ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes())
+    }
+
     func placeholder(in context: Context) -> ActivityEntry {
-        ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes())
+        currentEntry()
     }
 
     func getSnapshot(in context: Context, completion: @escaping (ActivityEntry) -> Void) {
-        completion(ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes()))
+        completion(currentEntry())
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<ActivityEntry>) -> Void) {
-        let entry = ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes())
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 5, to: Date())!
-        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+        let now = Date()
+        if let start = sharedActiveStart() {
+            let base = sharedActiveBase()
+            var entries: [ActivityEntry] = []
+            for i in 0..<60 {
+                let date = now.addingTimeInterval(TimeInterval(i * 60))
+                let minutes = base + Int(date.timeIntervalSince(start)) / 60
+                entries.append(ActivityEntry(date: date, totalMinutes: minutes))
+            }
+            completion(Timeline(entries: entries, policy: .atEnd))
+        } else {
+            let entry = ActivityEntry(date: now, totalMinutes: sharedTotalMinutes())
+            let nextUpdate = now.addingTimeInterval(30 * 60)
+            completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+        }
     }
 }
 

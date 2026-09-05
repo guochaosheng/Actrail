@@ -7,6 +7,8 @@ enum AppGroupConstant {
     static let suiteName = "group.com.actrail.app"
     static let todayTotalMinutesKey = "todayTotalMinutes"
     static let activeActivityNameKey = "activeActivityName"
+    static let activeStartDateKey = "activeStartDate"
+    static let activeBaseMinutesKey = "activeBaseMinutes"
 }
 
 @Observable
@@ -424,6 +426,7 @@ class WatchActivityViewModel {
 
         var totalSeconds: TimeInterval = 0
         var activeActivityName: String?
+        var activeStart: Date?
 
         for record in completedRecords {
             guard let endTime = record.endTime else { continue }
@@ -436,12 +439,25 @@ class WatchActivityViewModel {
             if record.startTime >= startOfDay && record.startTime < endOfDay {
                 totalSeconds += Date().timeIntervalSince(record.startTime)
                 activeActivityName = record.activityType.name
+                if activeStart == nil {
+                    activeStart = record.startTime
+                }
             }
         }
 
         let totalMinutes = Int(totalSeconds) / 60
         let shared = UserDefaults(suiteName: AppGroupConstant.suiteName)
         shared?.set(totalMinutes, forKey: AppGroupConstant.todayTotalMinutesKey)
+
+        if let start = activeStart {
+            let baseSeconds = totalSeconds - Date().timeIntervalSince(start)
+            shared?.set(start, forKey: AppGroupConstant.activeStartDateKey)
+            shared?.set(Int(baseSeconds) / 60, forKey: AppGroupConstant.activeBaseMinutesKey)
+        } else {
+            shared?.removeObject(forKey: AppGroupConstant.activeStartDateKey)
+            shared?.removeObject(forKey: AppGroupConstant.activeBaseMinutesKey)
+        }
+
         if let name = activeActivityName {
             shared?.set(name, forKey: AppGroupConstant.activeActivityNameKey)
         } else {
