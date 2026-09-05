@@ -279,37 +279,42 @@ struct WatchActiveActivityCard: View {
     let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HStack {
-            Image(systemName: record.activityType.iconName)
-                .font(.title3)
-                .foregroundColor(Color(hex: record.activityType.color))
-                .frame(width: 36, height: 36)
-                .background(Color(hex: record.activityType.color).opacity(0.2))
-                .clipShape(Circle())
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 5) {
+                    Image(systemName: record.activityType.iconName)
+                        .font(.system(size: 15))
+                        .foregroundColor(Color(hex: record.activityType.color))
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(record.activityType.name)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    Text(record.activityType.name)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                }
 
                 Text(viewModel.formatDuration(elapsedTime))
-                    .font(.body)
+                    .font(.system(.title2, design: .rounded))
                     .fontWeight(.bold)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.2))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
             }
-
-            Spacer()
 
             Button(action: {
                 viewModel.stopActivity(record)
             }) {
                 Image(systemName: "stop.fill")
-                    .font(.caption)
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.red)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 44, height: 44)
                     .background(Color.red.opacity(0.2))
                     .clipShape(Circle())
             }
+            .buttonStyle(.plain)
         }
         .padding(8)
         .background(Color.gray.opacity(0.15))
