@@ -357,11 +357,16 @@ class WatchActivityViewModel {
                 )
             }
 
-            // 合并：保留 Watch 本地已存在但 iPhone 尚未确认的活动
+            // 合并：保留 Watch 本地已存在且 iPhone 尚未确认（从未见过）的活动
             // 按活动类型匹配（Watch 和 iPhone 各自生成 UUID，ID 不同）
+            // 若 iPhone 的 completedRecords 里已存在该类型，说明 iPhone 已停掉，
+            // 不应再保留为本地 pending
             let iPhoneActiveTypeIDs = Set(iPhoneActive.map(\.activityType.id))
+            let iPhoneCompletedTypeIDs = Set(iPhoneCompleted.map(\.activityType.id))
             let pendingLocal = activeRecords.filter { record in
-                record.isActive && !iPhoneActiveTypeIDs.contains(record.activityType.id)
+                record.isActive
+                    && !iPhoneActiveTypeIDs.contains(record.activityType.id)
+                    && !iPhoneCompletedTypeIDs.contains(record.activityType.id)
             }
             self.activeRecords = iPhoneActive + pendingLocal
             self.completedRecords = iPhoneCompleted
