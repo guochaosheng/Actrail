@@ -310,6 +310,7 @@ struct AddReminderView: View {
     @State private var reminderDate = Date()
     @State private var alarmEnabled = false
     @State private var alarmGraceMinutes = 5
+    @State private var alarmSound = "default"
 
     var body: some View {
         NavigationView {
@@ -350,6 +351,15 @@ struct AddReminderView: View {
                             }
                             .pickerStyle(.menu)
                         }
+                        HStack {
+                            Text("闹钟铃声")
+                            Spacer()
+                            Picker("铃声", selection: $alarmSound) {
+                                Text("默认").tag("default")
+                                Text("无").tag("none")
+                            }
+                            .pickerStyle(.menu)
+                        }
                         Text("通知发出后，若 \(alarmGraceMinutes) 分钟内未打开 iPhone 且存在进行中的活动，iPhone 将持续振动提醒，直到打开确认")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -381,7 +391,8 @@ struct AddReminderView: View {
         viewModel.addReminder(
             date: reminderDate,
             alarmEnabled: alarmEnabled,
-            alarmGraceMinutes: alarmGraceMinutes
+            alarmGraceMinutes: alarmGraceMinutes,
+            alarmSound: alarmSound
         )
         dismiss()
     }

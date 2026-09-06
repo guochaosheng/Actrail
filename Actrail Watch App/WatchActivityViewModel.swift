@@ -17,7 +17,6 @@ class WatchActivityViewModel {
     var activeRecords: [WatchActivityRecord] = []
     var completedRecords: [WatchActivityRecord] = []
     var reminders: [WatchReminder] = []
-    var firingReminder: WatchReminder?
     var isReachable = false
 
     private let syncManager = WatchSyncManager.shared
@@ -108,9 +107,7 @@ class WatchActivityViewModel {
     }
 
     func fireTestReminder() {
-        if let reminder = reminders.first(where: { $0.isEnabled }) {
-            fireReminder(reminder)
-        }
+        fireReminder()
         scheduleWatchTestNotification()
     }
 
@@ -138,7 +135,6 @@ class WatchActivityViewModel {
     }
 
     private func checkDueReminders() {
-        guard firingReminder == nil else { return }
         let now = Date()
         let dayKey = Calendar.current.startOfDay(for: now).timeIntervalSince1970
 
@@ -156,21 +152,14 @@ class WatchActivityViewModel {
                 let key = "\(dayKey)-\(reminder.id.uuidString)"
                 guard !firedReminderKeys.contains(key) else { continue }
                 firedReminderKeys.insert(key)
-                fireReminder(reminder)
+                fireReminder()
                 return
             }
         }
     }
 
-    private func fireReminder(_ reminder: WatchReminder) {
-        firingReminder = reminder
+    private func fireReminder() {
         WKInterfaceDevice.current().play(.notification)
-    }
-
-    func unlockReminder() {
-        guard let reminder = firingReminder else { return }
-        firingReminder = nil
-        _ = reminder
     }
 
     // MARK: - Watch Local Notifications

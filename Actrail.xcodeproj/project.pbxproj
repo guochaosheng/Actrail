@@ -93,6 +93,13 @@
 			);
 			target = 32B9A162304AF95F0068CB8F /* ActrailWatchComplicationExtension */;
 		};
+		A6418C9F9349407EA89559186D0B8749 /* Exceptions for "Actrail Watch App" folder in "Actrail Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A1B2C3D400000006 /* Actrail Watch App */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -111,6 +118,9 @@
 		};
 		A1B2C3D400000008 /* Actrail Watch App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A6418C9F9349407EA89559186D0B8749 /* Exceptions for "Actrail Watch App" folder in "Actrail Watch App" target */,
+			);
 			path = "Actrail Watch App";
 			sourceTree = "<group>";
 		};
@@ -220,6 +230,7 @@
 			buildPhases = (
 				A1B2C3D40000001D /* Sources */,
 				A1B2C3D40000000A /* Frameworks */,
+				B9C5A8A55DF141E8BA8A48BD03843FB1 /* Resources */,
 				32B9A178304AF9600068CB8F /* Embed Foundation Extensions */,
 			);
 			buildRules = (
@@ -351,6 +362,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A1B2C3D400000041 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9C5A8A55DF141E8BA8A48BD03843FB1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (

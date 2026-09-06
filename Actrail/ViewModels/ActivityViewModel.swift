@@ -367,8 +367,8 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
         reminders = ActivityReminder.loadAll()
     }
 
-    func addReminder(date: Date, alarmEnabled: Bool = false, alarmGraceMinutes: Int = 5) {
-        let reminder = ActivityReminder(date: date, alarmEnabled: alarmEnabled, alarmGraceMinutes: alarmGraceMinutes)
+    func addReminder(date: Date, alarmEnabled: Bool = false, alarmGraceMinutes: Int = 5, alarmSound: String = "default") {
+        let reminder = ActivityReminder(date: date, alarmEnabled: alarmEnabled, alarmGraceMinutes: alarmGraceMinutes, alarmSound: alarmSound)
         reminders.append(reminder)
         ActivityReminder.saveAll(reminders)
         schedulePhoneNotification(for: reminder)
@@ -554,7 +554,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             let content = UNMutableNotificationContent()
             content.title = "行迹提醒"
             content.body = "请检查当前正在进行的活动是否正确"
-            content.sound = .default
+            content.sound = reminder.alarmSound == "none" ? nil : .default
             content.userInfo = ["presetTime": reminder.date]
 
             let dateComponents = Calendar.current.dateComponents(
@@ -620,7 +620,8 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
                 try await AlarmKitManager.shared.scheduleAlarm(
                     id: reminder.id,
                     date: alarmDate,
-                    reminderId: reminder.id.uuidString
+                    reminderId: reminder.id.uuidString,
+                    alarmSound: reminder.alarmSound
                 )
                 DiagnosticLog.append(tag: "AlarmSchedule", message: "✓ 闹钟排定成功 id=\(reminder.id.uuidString.prefix(8))")
                 appendAlarmPlan(reminder: reminder, alarmDate: alarmDate)

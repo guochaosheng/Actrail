@@ -1,5 +1,6 @@
 import Foundation
 import AlarmKit
+import ActivityKit
 
 nonisolated struct ActrailAlarmMetadata: AlarmMetadata {
     let reminderId: String
@@ -41,7 +42,7 @@ final class AlarmKitManager {
         }
     }
 
-    private func makeConfiguration(date: Date, reminderId: String) async throws -> AlarmManager.AlarmConfiguration<ActrailAlarmMetadata> {
+    private func makeConfiguration(date: Date, reminderId: String, alarmSound: String = "default") async throws -> AlarmManager.AlarmConfiguration<ActrailAlarmMetadata> {
         let alert = AlarmPresentation.Alert(
             title: "行迹闹钟",
             stopButton: AlarmButton(text: "停止", textColor: .white, systemImageName: "stop")
@@ -53,15 +54,18 @@ final class AlarmKitManager {
             tintColor: .blue
         )
         let schedule = Alarm.Schedule.fixed(date)
+        let sound: ActivityKit.AlertConfiguration.AlertSound = alarmSound == "none"
+            ? .named("silent.caf")
+            : .default
         return AlarmManager.AlarmConfiguration(
             schedule: schedule,
             attributes: attributes,
-            sound: .default
+            sound: sound
         )
     }
 
-    func scheduleAlarm(id: UUID, date: Date, reminderId: String) async throws {
-        let configuration = try await makeConfiguration(date: date, reminderId: reminderId)
+    func scheduleAlarm(id: UUID, date: Date, reminderId: String, alarmSound: String = "default") async throws {
+        let configuration = try await makeConfiguration(date: date, reminderId: reminderId, alarmSound: alarmSound)
         _ = try await alarmManager.schedule(id: id, configuration: configuration)
         DiagnosticLog.append(tag: "AlarmKitAPI", message: "scheduleAlarm 成功 id=\(id.uuidString.prefix(8)) date=\(date)")
     }

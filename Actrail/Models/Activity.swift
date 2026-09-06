@@ -69,19 +69,21 @@ struct ActivityReminder: Codable, Identifiable {
     var createdAt: Date
     var alarmEnabled: Bool
     var alarmGraceMinutes: Int
+    var alarmSound: String
 
-    init(date: Date, alarmEnabled: Bool = false, alarmGraceMinutes: Int = 5) {
+    init(date: Date, alarmEnabled: Bool = false, alarmGraceMinutes: Int = 5, alarmSound: String = "default") {
         self.id = UUID()
         self.date = date
         self.isEnabled = true
         self.createdAt = Date()
         self.alarmEnabled = alarmEnabled
         self.alarmGraceMinutes = alarmGraceMinutes
+        self.alarmSound = alarmSound
     }
 
     enum CodingKeys: String, CodingKey {
         case id, date, isEnabled, createdAt
-        case alarmEnabled, alarmGraceMinutes
+        case alarmEnabled, alarmGraceMinutes, alarmSound
     }
 
     init(from decoder: Decoder) throws {
@@ -91,6 +93,7 @@ struct ActivityReminder: Codable, Identifiable {
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         alarmEnabled = try c.decodeIfPresent(Bool.self, forKey: .alarmEnabled) ?? false
         alarmGraceMinutes = try c.decodeIfPresent(Int.self, forKey: .alarmGraceMinutes) ?? 5
+        alarmSound = try c.decodeIfPresent(String.self, forKey: .alarmSound) ?? "default"
 
         // 向后兼容：旧格式用 hour/minute，新格式用 date
         if let d = try? c.decode(Date.self, forKey: .date) {
