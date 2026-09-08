@@ -8,6 +8,7 @@ class WatchSyncManager {
 
     var isReachable = false
     var lastSyncDate: Date?
+    fileprivate var lastActivityData: Data?
 
     var onActivityUpdate: (([SyncedActivityType], [SyncedActivityRecord]) -> Void)?
     var onReachabilityChange: ((Bool) -> Void)?
@@ -35,6 +36,7 @@ class WatchSyncManager {
         let id: UUID
         let date: Date
         let watchPlanID: UUID?
+        let plansByDay: [String: String]?
     }
 
     struct SyncMessage: Codable {
@@ -79,21 +81,15 @@ class WatchSyncManager {
         let userInfo: [String: Any] = ["activityData": data]
         let session = WCSession.default
 
-        if session.isReachable {
+        lastActivityData = data
+
+        if session.activationState == .activated {
             session.sendMessage(userInfo, replyHandler: nil) { error in
                 print("[iPhone Sync] sendMessage failed: \(error)，改用 transferUserInfo 兜底")
                 WCSession.default.transferUserInfo(userInfo)
             }
         } else {
             session.transferUserInfo(userInfo)
-        }
-
-        // 用 applicationContext 保存最新快照：手表端每次会话激活/恢复时必然收到
-        // didReceiveApplicationContext，弥补 sendMessage/transferUserInfo 可能丢失。
-        do {
-            try session.updateApplicationContext(["activityData": data])
-        } catch {
-            print("[iPhone Sync] updateApplicationContext failed: \(error)")
         }
 
         lastSyncDate = Date()
@@ -188,6 +184,20 @@ class DelegateBox: NSObject, WCSessionDelegate {
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         print("[iPhone Sync] received message: \(message.keys.sorted())")
         syncManager?.handleReceivedPayload(message)
+    }
+
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        print("[iPhone Sync] received message(reply): \(message.keys.sorted())")
+        // 手表主动拉取请求 → 立即用最新快照同步回复，保证模拟器/真机都能即时拿到数据
+        if let action = message["action"] as? String, action == "requestData" {
+            if let data = syncManager?.lastActivityData {
+                replyHandler(["activityData": data])
+            } else {
+                replyHandler([:])
+            }
+        } else {
+            syncManager?.handleReceivedPayload(message)
+        }
     }
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {

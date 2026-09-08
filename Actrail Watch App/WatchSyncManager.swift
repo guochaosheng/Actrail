@@ -35,6 +35,7 @@ class WatchSyncManager {
         let id: UUID
         let date: Date
         let watchPlanID: UUID?
+        let plansByDay: [String: String]?
     }
 
     struct WatchReminderLogEntry: Codable {
@@ -92,9 +93,18 @@ class WatchSyncManager {
             Task { @MainActor in onReachabilityChange?(reachable) }
         }
         let userInfo: [String: Any] = ["action": "requestData"]
-        if reachable {
-            session.sendMessage(userInfo, replyHandler: nil) { error in
-                print("[Watch Sync] requestData failed: \(error)")
+        if session.activationState == .activated {
+            // 用 replyHandler 同步拿回最新快照，不再依赖 didReceive* 通道（模拟器上不总可靠）
+            session.sendMessage(userInfo, replyHandler: { [weak self] reply in
+                if let data = reply["activityData"] as? Data {
+                    self?.lastSyncDate = Date()
+                    Task { @MainActor in
+                        self?.onDataUpdate?(data)
+                    }
+                }
+            }) { error in
+                print("[Watch Sync] requestData failed: \(error)，改用 transferUserInfo")
+                WCSession.default.transferUserInfo(userInfo)
             }
         } else {
             session.transferUserInfo(userInfo)
@@ -190,17 +200,19 @@ class DelegateBox: NSObject, WCSessionDelegate, @unchecked Sendable {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        print("[Watch Sync] received message: \(message.keys.sorted())")
         syncManager?.handleReceivedPayload(message)
     }
 
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        syncManager?.handleReceivedPayload(message)
+        replyHandler([:])
+    }
+
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        print("[Watch Sync] received userInfo: \(userInfo.keys.sorted())")
         syncManager?.handleReceivedPayload(userInfo)
     }
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        print("[Watch Sync] received applicationContext: \(applicationContext.keys.sorted())")
         syncManager?.handleReceivedPayload(applicationContext)
     }
 

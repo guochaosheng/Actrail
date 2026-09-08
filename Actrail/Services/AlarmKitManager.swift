@@ -10,6 +10,28 @@ final class AlarmKitManager {
     static let shared = AlarmKitManager()
     let alarmManager = AlarmManager.shared
 
+    private static let registryKey = "com.actrail.alarmRegistry"
+
+    /// 本 app 排定过的系统闹钟 id 登记册（与 reminders 缓存独立，防孤儿）。
+    func registeredAlarmIDs() -> [UUID] {
+        guard let data = UserDefaults.standard.stringArray(forKey: Self.registryKey) else { return [] }
+        return data.compactMap(UUID.init(uuidString:))
+    }
+
+    func registerAlarm(id: UUID) {
+        var ids = UserDefaults.standard.stringArray(forKey: Self.registryKey) ?? []
+        let key = id.uuidString
+        if !ids.contains(key) {
+            ids.append(key)
+            UserDefaults.standard.set(ids, forKey: Self.registryKey)
+            DiagnosticLog.append(tag: "AlarmRegistry", message: "登记闹钟 \(key.prefix(8))（累计 \(ids.count)）")
+        }
+    }
+
+    func clearAlarmRegistry() {
+        UserDefaults.standard.removeObject(forKey: Self.registryKey)
+    }
+
     var authorizationState: AlarmManager.AuthorizationState {
         alarmManager.authorizationState
     }
@@ -67,9 +89,13 @@ final class AlarmKitManager {
     func scheduleAlarm(date: Date, reminderId: String, alarmSound: String = "default") async throws -> UUID {
         let configuration = try await makeConfiguration(date: date, reminderId: reminderId, alarmSound: alarmSound)
         let alarmID = UUID()
-        _ = try await alarmManager.schedule(id: alarmID, configuration: configuration)
-        DiagnosticLog.append(tag: "AlarmKitAPI", message: "scheduleAlarm 成功 id=\(reminderId.prefix(8)) date=\(date)")
-        return alarmID
+        let alarm = try await alarmManager.schedule(id: alarmID, configuration: configuration)
+        if alarm.id != alarmID {
+            DiagnosticLog.append(tag: "AlarmKitAPI", message: "⚠️ 系统 id 重写: 传入 \(alarmID.uuidString.prefix(8)) → 实际 \(alarm.id.uuidString.prefix(8))")
+        }
+        registerAlarm(id: alarm.id)
+        DiagnosticLog.append(tag: "AlarmKitAPI", message: "scheduleAlarm 成功 id=\(alarm.id.uuidString.prefix(8)) reminder=\(reminderId.prefix(8)) date=\(date)")
+        return alarm.id
     }
 
     func cancelAlarms(ids: [UUID]) {
@@ -80,12 +106,28 @@ final class AlarmKitManager {
     }
 
     func cancelAlarm(id: UUID) {
-        DiagnosticLog.append(tag: "AlarmKitAPI", message: "cancelAlarm \(id.uuidString.prefix(8))")
-        try? alarmManager.cancel(id: id)
+        do {
+            try alarmManager.cancel(id: id)
+            DiagnosticLog.append(tag: "AlarmKitAPI", message: "✓ cancelAlarm 成功 \(id.uuidString.prefix(8))")
+        } catch {
+            DiagnosticLog.append(tag: "AlarmKitAPI", message: "✗ cancelAlarm 失败 \(id.uuidString.prefix(8)): \(error.localizedDescription)")
+        }
     }
 
     func stopAlarm(id: UUID) {
         DiagnosticLog.append(tag: "AlarmKitAPI", message: "stopAlarm \(id.uuidString.prefix(8))")
         try? alarmManager.stop(id: id)
+    }
+
+    /// 查询系统实际排定的闹钟。返回 nil 表示系统查询失败，空数组表示无排定。
+    func queryAlarms() -> [Alarm]? {
+        do {
+            let alarms = try alarmManager.alarms
+            DiagnosticLog.append(tag: "AlarmKitAPI", message: "queryAlarms 成功 count=\(alarms.count)")
+            return alarms
+        } catch {
+            DiagnosticLog.append(tag: "AlarmKitAPI", message: "queryAlarms 失败: \(error)")
+            return nil
+        }
     }
 }

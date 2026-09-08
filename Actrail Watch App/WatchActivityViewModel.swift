@@ -18,10 +18,13 @@ class WatchActivityViewModel {
     var completedRecords: [WatchActivityRecord] = []
     var reminders: [WatchReminder] = []
     var isReachable = false
+    var isConnectingToPhone = false
 
     private let syncManager = WatchSyncManager.shared
     private var syncTimer: Timer?
     private var reminderCheckTimer: Timer?
+    private var reconnectTimer: Timer?
+    private var connectingHideTask: Task<Void, Never>?
     private var firedReminderKeys: Set<String> = []
     private var reportedReminderKeys: Set<String> = []
     private let notificationDelegate = WatchNotificationDelegate()
@@ -33,11 +36,14 @@ class WatchActivityViewModel {
         setupWatchNotifications()
         requestInitialData()
         startReminderCheck()
+        startReconnectLoop()
     }
 
     deinit {
         syncTimer?.invalidate()
         reminderCheckTimer?.invalidate()
+        reconnectTimer?.invalidate()
+        connectingHideTask?.cancel()
     }
 
     private func setupReachabilityObserver() {
@@ -48,6 +54,51 @@ class WatchActivityViewModel {
                     self?.requestInitialData()
                 }
             }
+        }
+    }
+
+    // MARK: - 连接拦截：未连接 iPhone 时任何按钮操作都提示「正在连接中」
+
+    private func isPhoneLinked() -> Bool {
+        WCSession.default.activationState == .activated && WCSession.default.isReachable
+    }
+
+    /// App 打开后持续尝试连接，直到成功；断连后自动继续重连。
+    private func startReconnectLoop() {
+        reconnectTimer?.invalidate()
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.tryReconnect()
+            }
+        }
+        Task { @MainActor in
+            self.tryReconnect()
+        }
+    }
+
+    private func tryReconnect() {
+        if isPhoneLinked() {
+            return
+        }
+        syncManager.requestDataFromiPhone()
+    }
+
+    /// 用户点击任意操作按钮前的统一守卫：已连接则放行，否则弹出「正在连接中」。
+    func onUserAction() -> Bool {
+        guard isPhoneLinked() else {
+            showConnectingIndicator()
+            return false
+        }
+        return true
+    }
+
+    private func showConnectingIndicator() {
+        isConnectingToPhone = true
+        connectingHideTask?.cancel()
+        connectingHideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            self.isConnectingToPhone = false
         }
     }
 
@@ -119,7 +170,7 @@ class WatchActivityViewModel {
 
     private func startPeriodicSync() {
         syncTimer?.invalidate()
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.syncManager.requestDataFromiPhone()
             }
@@ -217,60 +268,75 @@ class WatchActivityViewModel {
         let center = UNUserNotificationCenter.current()
         center.removeAllPendingNotificationRequests()
         let calendar = Calendar.current
+        let now = Date()
         for reminder in reminders {
+            _ = reminder.isEnabled
             let hour = calendar.component(.hour, from: reminder.date)
             let minute = calendar.component(.minute, from: reminder.date)
-            let startOfDay = calendar.startOfDay(for: Date())
-            var candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: startOfDay)
-            if let c = candidate, c <= Date() {
-                // 当天该时刻已过：排明天
-                if let tomorrow = calendar.date(byAdding: .day, value: 1, to: startOfDay) {
-                    candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: tomorrow)
+            let startOfDay = calendar.startOfDay(for: now)
+
+            // 跟随 iPhone 滚动 3 天：从今天起（当天已过则从明天起）为未来 3 天各排一个
+            var candidates: [Date] = []
+            var day = startOfDay
+            var guardCount = 0
+            while candidates.count < 3 && guardCount < 31 {
+                guardCount += 1
+                if let candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) {
+                    if candidate > now {
+                        let dayKey = Self.dayKey(candidate)
+                        if !candidates.contains(where: { Self.dayKey($0) == dayKey }) {
+                            candidates.append(candidate)
+                        }
+                    }
                 }
+                day = calendar.date(byAdding: .day, value: 1, to: day) ?? day
             }
-            guard let candidate else { continue }
 
-            let content = UNMutableNotificationContent()
-            content.title = "行迹提醒"
-            content.body = "请检查当前正在进行的活动是否正确"
-            content.sound = .default
-            var userInfo: [String: Any] = ["presetTime": candidate]
-            if let pid = reminder.planID { userInfo["planID"] = pid.uuidString }
-            content.userInfo = userInfo
+            for candidate in candidates {
+                let content = UNMutableNotificationContent()
+                content.title = "行迹提醒"
+                content.body = "请检查当前正在进行的活动是否正确"
+                content.sound = .default
+                let dayKey = Self.dayKey(candidate)
+                var userInfo: [String: Any] = ["presetTime": candidate]
+                let planIDString = reminder.plansByDay[dayKey] ?? reminder.planID?.uuidString
+                if let pid = planIDString { userInfo["planID"] = pid }
+                content.userInfo = userInfo
 
-            let dateComponents = calendar.dateComponents(
-                [.year, .month, .day, .hour, .minute],
-                from: candidate
-            )
-
-            let dayKey = Self.dayKey(candidate)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
-            let request = UNNotificationRequest(
-                identifier: "reminder-\(reminder.id.uuidString)-\(dayKey)",
-                content: content,
-                trigger: trigger
-            )
-            let reportKey = "\(reminder.id.uuidString)-\(dayKey)"
-            center.add(request) { [weak self] error in
-                guard let self else { return }
-                let ok = error == nil
-                if ok, self.reportedReminderKeys.contains(reportKey) { return }
-                let f = DateFormatter()
-                f.dateFormat = "MM/dd HH:mm"
-                let entry = WatchSyncManager.WatchReminderLogEntry(
-                    content: "iWatch 排定提醒 \(f.string(from: candidate))（等待系统投递）",
-                    presetTime: Date(),
-                    sentTime: Date(),
-                    sentSuccessfully: ok,
-                    source: ok ? "iWatch 计划" : "iWatch 排定失败",
-                    reminderID: reminder.id,
-                    planID: reminder.planID
+                let dateComponents = calendar.dateComponents(
+                    [.year, .month, .day, .hour, .minute],
+                    from: candidate
                 )
-                if ok {
-                    self.reportedReminderKeys.insert(reportKey)
-                    self.syncManager.sendReminderLog(entry)
-                } else {
-                    self.syncManager.sendReminderLog(entry)
+
+                let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
+                let request = UNNotificationRequest(
+                    identifier: "reminder-\(reminder.id.uuidString)-\(dayKey)",
+                    content: content,
+                    trigger: trigger
+                )
+                let reportKey = "\(reminder.id.uuidString)-\(dayKey)"
+                let slotPlanID = planIDString.flatMap(UUID.init(uuidString:))
+                center.add(request) { [weak self] error in
+                    guard let self else { return }
+                    let ok = error == nil
+                    if ok, self.reportedReminderKeys.contains(reportKey) { return }
+                    let f = DateFormatter()
+                    f.dateFormat = "MM/dd HH:mm"
+                    let entry = WatchSyncManager.WatchReminderLogEntry(
+                        content: "iWatch 排定提醒 \(f.string(from: candidate))（等待系统投递）",
+                        presetTime: candidate,
+                        sentTime: Date(),
+                        sentSuccessfully: ok,
+                        source: ok ? "iWatch 计划" : "iWatch 排定失败",
+                        reminderID: reminder.id,
+                        planID: slotPlanID
+                    )
+                    if ok {
+                        self.reportedReminderKeys.insert(reportKey)
+                        self.syncManager.sendReminderLog(entry)
+                    } else {
+                        self.syncManager.sendReminderLog(entry)
+                    }
                 }
             }
         }
@@ -418,7 +484,8 @@ class WatchActivityViewModel {
                 WatchReminder(
                     id: syncReminder.id,
                     date: syncReminder.date,
-                    planID: syncReminder.watchPlanID
+                    planID: syncReminder.watchPlanID,
+                    plansByDay: syncReminder.plansByDay ?? [:]
                 )
             }
             if !self.remindersEquivalent(reminders) {
@@ -432,6 +499,7 @@ class WatchActivityViewModel {
     }
 
     func startActivity(_ type: WatchActivityType) {
+        guard onUserAction() else { return }
         if activeRecords.contains(where: { $0.activityType.id == type.id && $0.isActive }) {
             return
         }
@@ -444,6 +512,7 @@ class WatchActivityViewModel {
     }
 
     func stopActivity(_ record: WatchActivityRecord) {
+        guard onUserAction() else { return }
         if let index = activeRecords.firstIndex(where: { $0.id == record.id }) {
             var updatedRecord = record
             updatedRecord.stop()
@@ -542,12 +611,14 @@ struct WatchReminder: Identifiable {
     let date: Date
     let isEnabled: Bool
     let planID: UUID?
+    var plansByDay: [String: String]
 
-    init(id: UUID = UUID(), date: Date, isEnabled: Bool = true, planID: UUID? = nil) {
+    init(id: UUID = UUID(), date: Date, isEnabled: Bool = true, planID: UUID? = nil, plansByDay: [String: String] = [:]) {
         self.id = id
         self.date = date
         self.isEnabled = isEnabled
         self.planID = planID
+        self.plansByDay = plansByDay
     }
 
     var hour: Int { Calendar.current.component(.hour, from: date) }

@@ -56,6 +56,24 @@ struct WatchContentView: View {
             }
             .navigationBarHidden(true)
         }
+        .overlay {
+            if viewModel.isConnectingToPhone {
+                ZStack {
+                    Color.black.opacity(0.5)
+                        .ignoresSafeArea()
+                    VStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("正在连接中...")
+                            .font(.caption)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.vertical, 18)
+                    .padding(.horizontal, 26)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        }
     }
 }
 
