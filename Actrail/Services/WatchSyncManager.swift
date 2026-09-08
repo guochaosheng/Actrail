@@ -34,6 +34,7 @@ class WatchSyncManager {
     struct SyncedReminder: Codable, Identifiable {
         let id: UUID
         let date: Date
+        let watchPlanID: UUID?
     }
 
     struct SyncMessage: Codable {
@@ -80,10 +81,19 @@ class WatchSyncManager {
 
         if session.isReachable {
             session.sendMessage(userInfo, replyHandler: nil) { error in
-                print("[iPhone Sync] sendMessage failed: \(error)")
+                print("[iPhone Sync] sendMessage failed: \(error)，改用 transferUserInfo 兜底")
+                WCSession.default.transferUserInfo(userInfo)
             }
         } else {
             session.transferUserInfo(userInfo)
+        }
+
+        // 用 applicationContext 保存最新快照：手表端每次会话激活/恢复时必然收到
+        // didReceiveApplicationContext，弥补 sendMessage/transferUserInfo 可能丢失。
+        do {
+            try session.updateApplicationContext(["activityData": data])
+        } catch {
+            print("[iPhone Sync] updateApplicationContext failed: \(error)")
         }
 
         lastSyncDate = Date()

@@ -13,8 +13,10 @@ struct SettingsView: View {
     @State private var alarmKitAuthText = "未知"
     @State private var diagLogs: [DiagnosticLogEntry] = []
 
+    @State private var showClearConfirm = false
+
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 Section("通用") {
                     Toggle("启用通知", isOn: $notificationsEnabled)
@@ -62,6 +64,19 @@ struct SettingsView: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .textSelection(.enabled)
+                    }
+                }
+
+                Section("开发者") {
+                    Button("清空记录提醒与提醒历史", role: .destructive) {
+                        showClearConfirm = true
+                    }
+                    .confirmationDialog("将清空所有记录提醒与提醒历史（含已排定闹钟），此操作不可恢复", isPresented: $showClearConfirm, titleVisibility: .visible) {
+                        Button("清空", role: .destructive) {
+                            viewModel.clearRemindersAndLogs()
+                            refreshNotificationStatus()
+                        }
+                        Button("取消", role: .cancel) {}
                     }
                 }
 

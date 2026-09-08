@@ -1,10 +1,14 @@
 import Foundation
-import ActivityKit
 
+#if os(iOS)
+import ActivityKit
+#endif
+
+#if os(iOS)
 public struct AlarmActivityAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         public var countdownEndDate: Date
-        
+
         public init(countdownEndDate: Date) {
             self.countdownEndDate = countdownEndDate
         }
@@ -22,3 +26,4 @@ public struct AlarmActivityAttributes: ActivityAttributes {
         self.reminderId = reminderId
     }
 }
+#endif

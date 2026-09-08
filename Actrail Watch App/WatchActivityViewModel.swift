@@ -23,6 +23,7 @@ class WatchActivityViewModel {
     private var syncTimer: Timer?
     private var reminderCheckTimer: Timer?
     private var firedReminderKeys: Set<String> = []
+    private var reportedReminderKeys: Set<String> = []
     private let notificationDelegate = WatchNotificationDelegate()
 
     init() {
@@ -165,14 +166,23 @@ class WatchActivityViewModel {
     // MARK: - Watch Local Notifications
 
     private func setupWatchNotifications() {
-        notificationDelegate.onTriggered = { [weak self] _ in
+        notificationDelegate.onTriggered = { [weak self] notification in
             Task { @MainActor in
-                self?.logWatchReminder(sentSuccessfully: true, source: "iWatch 本地通知")
+                let planID = (notification.request.content.userInfo["planID"] as? String).flatMap(UUID.init(uuidString:))
+                let reminderID = Self.reminderID(from: notification.request.identifier)
+                self?.logWatchReminder(
+                    sentSuccessfully: true,
+                    source: "iWatch 本地通知",
+                    reminderID: reminderID,
+                    planID: planID
+                )
             }
         }
-        notificationDelegate.onTapped = { [weak self] _ in
+        notificationDelegate.onTapped = { [weak self] response in
             Task { @MainActor in
-                self?.logWatchConfirmed()
+                let planID = (response.notification.request.content.userInfo["planID"] as? String).flatMap(UUID.init(uuidString:))
+                let reminderID = Self.reminderID(from: response.notification.request.identifier)
+                self?.logWatchConfirmed(reminderID: reminderID, planID: planID)
             }
         }
         UNUserNotificationCenter.current().delegate = notificationDelegate
@@ -184,54 +194,92 @@ class WatchActivityViewModel {
         }
     }
 
+    /// 从通知 identifier（reminder-<UUID>-<yyyyMMdd>）解析回提醒 id，
+    /// 保证触发/确认日志能精确关联到具体提醒。
+    private static func reminderID(from identifier: String) -> UUID? {
+        let parts = identifier.components(separatedBy: "-")
+        guard parts.first == "reminder", parts.count >= 6 else { return nil }
+        let uuidString = parts.dropFirst().dropLast().joined(separator: "-")
+        return UUID(uuidString: uuidString)
+    }
+
     private func remindersEquivalent(_ new: [WatchReminder]) -> Bool {
         guard new.count == reminders.count else { return false }
-        let oldSet = Set(reminders.map { "\($0.id)-\($0.date.timeIntervalSince1970)" })
-        let newSet = Set(new.map { "\($0.id)-\($0.date.timeIntervalSince1970)" })
+        let oldSet = Set(reminders.map { "\($0.id)-\($0.date.timeIntervalSince1970)-\($0.planID?.uuidString ?? "")" })
+        let newSet = Set(new.map { "\($0.id)-\($0.date.timeIntervalSince1970)-\($0.planID?.uuidString ?? "")" })
         return oldSet == newSet
     }
 
-    private func rescheduleWatchNotifications() {
+    private func rescheduleWatchNotifications(resetReportedKeys: Bool = false) {
+        if resetReportedKeys {
+            reportedReminderKeys.removeAll()
+        }
         let center = UNUserNotificationCenter.current()
         center.removeAllPendingNotificationRequests()
         let calendar = Calendar.current
         for reminder in reminders {
-            // 检查提醒时间是否已过
-            guard reminder.date > Date() else { continue }
+            let hour = calendar.component(.hour, from: reminder.date)
+            let minute = calendar.component(.minute, from: reminder.date)
+            let startOfDay = calendar.startOfDay(for: Date())
+            var candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: startOfDay)
+            if let c = candidate, c <= Date() {
+                // 当天该时刻已过：排明天
+                if let tomorrow = calendar.date(byAdding: .day, value: 1, to: startOfDay) {
+                    candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: tomorrow)
+                }
+            }
+            guard let candidate else { continue }
 
             let content = UNMutableNotificationContent()
             content.title = "行迹提醒"
             content.body = "请检查当前正在进行的活动是否正确"
             content.sound = .default
-            content.userInfo = ["presetTime": reminder.date]
+            var userInfo: [String: Any] = ["presetTime": candidate]
+            if let pid = reminder.planID { userInfo["planID"] = pid.uuidString }
+            content.userInfo = userInfo
 
             let dateComponents = calendar.dateComponents(
                 [.year, .month, .day, .hour, .minute],
-                from: reminder.date
+                from: candidate
             )
 
+            let dayKey = Self.dayKey(candidate)
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
             let request = UNNotificationRequest(
-                identifier: "reminder-\(reminder.id.uuidString)",
+                identifier: "reminder-\(reminder.id.uuidString)-\(dayKey)",
                 content: content,
                 trigger: trigger
             )
+            let reportKey = "\(reminder.id.uuidString)-\(dayKey)"
             center.add(request) { [weak self] error in
+                guard let self else { return }
                 let ok = error == nil
+                if ok, self.reportedReminderKeys.contains(reportKey) { return }
                 let f = DateFormatter()
                 f.dateFormat = "MM/dd HH:mm"
                 let entry = WatchSyncManager.WatchReminderLogEntry(
-                    content: "iWatch 排定提醒 \(f.string(from: reminder.date))（等待系统投递）",
+                    content: "iWatch 排定提醒 \(f.string(from: candidate))（等待系统投递）",
                     presetTime: Date(),
                     sentTime: Date(),
                     sentSuccessfully: ok,
-                    source: ok ? "iWatch 计划" : "iWatch 排定失败"
+                    source: ok ? "iWatch 计划" : "iWatch 排定失败",
+                    reminderID: reminder.id,
+                    planID: reminder.planID
                 )
                 if ok {
-                    self?.syncManager.sendReminderLog(entry)
+                    self.reportedReminderKeys.insert(reportKey)
+                    self.syncManager.sendReminderLog(entry)
+                } else {
+                    self.syncManager.sendReminderLog(entry)
                 }
             }
         }
+    }
+
+    private static func dayKey(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd"
+        return f.string(from: date)
     }
 
     /// Schedules a debug local notification 10 seconds from now to verify the watch
@@ -289,24 +337,28 @@ class WatchActivityViewModel {
         }
     }
 
-    func logWatchReminder(sentSuccessfully: Bool, source: String) {
+    func logWatchReminder(sentSuccessfully: Bool, source: String, reminderID: UUID? = nil, planID: UUID? = nil) {
         let entry = WatchSyncManager.WatchReminderLogEntry(
             content: "请检查当前正在进行的活动是否正确",
             presetTime: Date(),
             sentTime: Date(),
             sentSuccessfully: sentSuccessfully,
-            source: source
+            source: source,
+            reminderID: reminderID,
+            planID: planID
         )
         syncManager.sendReminderLog(entry)
     }
 
-    func logWatchConfirmed() {
+    func logWatchConfirmed(reminderID: UUID? = nil, planID: UUID? = nil) {
         let entry = WatchSyncManager.WatchReminderLogEntry(
             content: "已确认收到提醒",
             presetTime: Date(),
             sentTime: Date(),
             sentSuccessfully: true,
-            source: "iWatch 已确认"
+            source: "iWatch 已确认",
+            reminderID: reminderID,
+            planID: planID
         )
         syncManager.sendReminderLog(entry)
     }
@@ -365,13 +417,15 @@ class WatchActivityViewModel {
             let reminders = message.reminders.map { syncReminder in
                 WatchReminder(
                     id: syncReminder.id,
-                    date: syncReminder.date
+                    date: syncReminder.date,
+                    planID: syncReminder.watchPlanID
                 )
             }
             if !self.remindersEquivalent(reminders) {
                 self.reminders = reminders
-                self.rescheduleWatchNotifications()
             }
+            // 每次数据到达都重排（幂等），确保打开 App 后按当天/次日滚动续排
+            self.rescheduleWatchNotifications()
         } catch {
             print("[Watch VM] Failed to decode sync data: \(error)")
         }
@@ -487,11 +541,13 @@ struct WatchReminder: Identifiable {
     let id: UUID
     let date: Date
     let isEnabled: Bool
+    let planID: UUID?
 
-    init(id: UUID = UUID(), date: Date, isEnabled: Bool = true) {
+    init(id: UUID = UUID(), date: Date, isEnabled: Bool = true, planID: UUID? = nil) {
         self.id = id
         self.date = date
         self.isEnabled = isEnabled
+        self.planID = planID
     }
 
     var hour: Int { Calendar.current.component(.hour, from: date) }

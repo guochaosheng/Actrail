@@ -34,6 +34,7 @@ class WatchSyncManager {
     struct SyncedReminder: Codable, Identifiable {
         let id: UUID
         let date: Date
+        let watchPlanID: UUID?
     }
 
     struct WatchReminderLogEntry: Codable {
@@ -43,14 +44,18 @@ class WatchSyncManager {
         var sentTime: Date
         var sentSuccessfully: Bool
         var source: String
+        var reminderID: UUID?
+        var planID: UUID?
 
-        init(content: String, presetTime: Date, sentTime: Date, sentSuccessfully: Bool, source: String) {
+        init(content: String, presetTime: Date, sentTime: Date, sentSuccessfully: Bool, source: String, reminderID: UUID? = nil, planID: UUID? = nil) {
             self.id = UUID()
             self.content = content
             self.presetTime = presetTime
             self.sentTime = sentTime
             self.sentSuccessfully = sentSuccessfully
             self.source = source
+            self.reminderID = reminderID
+            self.planID = planID
         }
     }
 
@@ -105,7 +110,10 @@ class WatchSyncManager {
         }
         let userInfo: [String: Any] = ["action": "startActivity", "typeId": typeId.uuidString]
         if reachable {
-            session.sendMessage(userInfo, replyHandler: nil, errorHandler: nil)
+            session.sendMessage(userInfo, replyHandler: nil) { error in
+                print("[Watch Sync] startActivity sendMessage failed: \(error)，改用 transferUserInfo 兜底")
+                WCSession.default.transferUserInfo(userInfo)
+            }
         } else {
             session.transferUserInfo(userInfo)
         }
@@ -120,7 +128,10 @@ class WatchSyncManager {
         }
         let userInfo: [String: Any] = ["action": "stopActivity", "recordId": recordId.uuidString]
         if reachable {
-            session.sendMessage(userInfo, replyHandler: nil, errorHandler: nil)
+            session.sendMessage(userInfo, replyHandler: nil) { error in
+                print("[Watch Sync] stopActivity sendMessage failed: \(error)，改用 transferUserInfo 兜底")
+                WCSession.default.transferUserInfo(userInfo)
+            }
         } else {
             session.transferUserInfo(userInfo)
         }
@@ -186,6 +197,11 @@ class DelegateBox: NSObject, WCSessionDelegate, @unchecked Sendable {
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         print("[Watch Sync] received userInfo: \(userInfo.keys.sorted())")
         syncManager?.handleReceivedPayload(userInfo)
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        print("[Watch Sync] received applicationContext: \(applicationContext.keys.sorted())")
+        syncManager?.handleReceivedPayload(applicationContext)
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {

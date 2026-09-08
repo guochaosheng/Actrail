@@ -36,7 +36,7 @@ struct WatchContentView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("开始新活动")
+                        Text("记录活动")
                             .font(.caption)
                             .foregroundColor(.secondary)
 

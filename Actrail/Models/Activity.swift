@@ -69,9 +69,16 @@ struct ActivityReminder: Codable, Identifiable {
     var createdAt: Date
     var alarmEnabled: Bool
     var alarmGraceMinutes: Int
-    var alarmSound: String
+var alarmSound: String
+    var scheduledDates: [Date]
+    var scheduledAlarmIDs: [String: UUID]
 
-    init(date: Date, alarmEnabled: Bool = false, alarmGraceMinutes: Int = 5, alarmSound: String = "default") {
+    /// 提醒唯一编号（短码），用于在历史里区分不同提醒
+    var shortID: String {
+        String(id.uuidString.prefix(8)).uppercased()
+    }
+
+    init(date: Date, alarmEnabled: Bool = false, alarmGraceMinutes: Int = 5, alarmSound: String = "default", scheduledDates: [Date] = [], scheduledAlarmIDs: [String: UUID] = [:]) {
         self.id = UUID()
         self.date = date
         self.isEnabled = true
@@ -79,11 +86,13 @@ struct ActivityReminder: Codable, Identifiable {
         self.alarmEnabled = alarmEnabled
         self.alarmGraceMinutes = alarmGraceMinutes
         self.alarmSound = alarmSound
+        self.scheduledDates = scheduledDates
+        self.scheduledAlarmIDs = scheduledAlarmIDs
     }
 
-    enum CodingKeys: String, CodingKey {
+enum CodingKeys: String, CodingKey {
         case id, date, isEnabled, createdAt
-        case alarmEnabled, alarmGraceMinutes, alarmSound
+        case alarmEnabled, alarmGraceMinutes, alarmSound, scheduledDates, scheduledAlarmIDs
     }
 
     init(from decoder: Decoder) throws {
@@ -94,6 +103,8 @@ struct ActivityReminder: Codable, Identifiable {
         alarmEnabled = try c.decodeIfPresent(Bool.self, forKey: .alarmEnabled) ?? false
         alarmGraceMinutes = try c.decodeIfPresent(Int.self, forKey: .alarmGraceMinutes) ?? 5
         alarmSound = try c.decodeIfPresent(String.self, forKey: .alarmSound) ?? "default"
+        scheduledDates = try c.decodeIfPresent([Date].self, forKey: .scheduledDates) ?? []
+        scheduledAlarmIDs = try c.decodeIfPresent([String: UUID].self, forKey: .scheduledAlarmIDs) ?? [:]
 
         // 向后兼容：旧格式用 hour/minute，新格式用 date
         if let d = try? c.decode(Date.self, forKey: .date) {
@@ -120,8 +131,26 @@ struct ActivityReminder: Codable, Identifiable {
 
     var timeString: String {
         let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return "每天 \(f.string(from: date))"
+    }
+
+    private static let scheduleDateFormatter: DateFormatter = {
+        let f = DateFormatter()
         f.dateFormat = "MM/dd HH:mm"
-        return f.string(from: date)
+        return f
+    }()
+
+    /// 未来已排定的具体日期时间（滚动 3 天），今天/明天优先显示。
+    var scheduledDatesString: String {
+        guard !scheduledDates.isEmpty else { return "尚未排定" }
+        let calendar = Calendar.current
+        let parts = scheduledDates.map { d -> String in
+            if calendar.isDateInToday(d) { return "今天 \(Self.scheduleDateFormatter.string(from: d))" }
+            if calendar.isDateInTomorrow(d) { return "明天 \(Self.scheduleDateFormatter.string(from: d))" }
+            return Self.scheduleDateFormatter.string(from: d)
+        }
+        return "已排定：\(parts.joined(separator: "、"))"
     }
 
     // 向后兼容 CodingKeys（旧数据含 hour/minute）
@@ -155,9 +184,10 @@ struct ReminderLogEntry: Codable, Identifiable {
     var source: String
     var status: String
     var reminderID: UUID?
+    var planID: UUID?
 
-    init(content: String, presetTime: Date, sentTime: Date, sentSuccessfully: Bool, source: String, status: String = "", reminderID: UUID? = nil) {
-        self.id = UUID()
+    init(content: String, presetTime: Date, sentTime: Date, sentSuccessfully: Bool, source: String, status: String = "", reminderID: UUID? = nil, planID: UUID? = nil, id: UUID = UUID()) {
+        self.id = id
         self.content = content
         self.presetTime = presetTime
         self.sentTime = sentTime
@@ -165,11 +195,13 @@ struct ReminderLogEntry: Codable, Identifiable {
         self.source = source
         self.status = status
         self.reminderID = reminderID
+        self.planID = planID
     }
 
     enum CodingKeys: String, CodingKey {
         case id, content, presetTime, sentTime, sentSuccessfully, source
         case status, reminderID
+        case planID
     }
 
     init(from decoder: Decoder) throws {
@@ -182,6 +214,7 @@ struct ReminderLogEntry: Codable, Identifiable {
         source = try c.decode(String.self, forKey: .source)
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
         reminderID = try c.decodeIfPresent(UUID.self, forKey: .reminderID)
+        planID = try c.decodeIfPresent(UUID.self, forKey: .planID)
     }
 
     static let defaultsKey = "reminderLogs"
@@ -199,4 +232,62 @@ struct ReminderLogEntry: Codable, Identifiable {
             UserDefaults.standard.set(data, forKey: defaultsKey)
         }
     }
+}
+
+// MARK: - 提醒历史归档分组
+
+enum ReminderLogKind: Int, CaseIterable, Identifiable {
+    case phone, watch, alarm, other
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .phone: return "iPhone 计划"
+        case .watch: return "iWatch 计划"
+        case .alarm: return "闹钟计划"
+        case .other: return "其它事件"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .phone: return "iphone"
+        case .watch: return "applewatch"
+        case .alarm: return "alarm"
+        case .other: return "doc.text"
+        }
+    }
+}
+
+extension ReminderLogEntry {
+    var kind: ReminderLogKind {
+        if source.contains("iPhone") { return .phone }
+        if source.contains("iWatch") { return .watch }
+        if source.contains("闹钟") { return .alarm }
+        return .other
+    }
+}
+
+struct ReminderSlotSection: Identifiable {
+    var id: String
+    var kind: ReminderLogKind
+    var slotLabel: String
+    var finalStatus: String
+    var logs: [ReminderLogEntry]
+}
+
+struct ReminderLogKindSection: Identifiable {
+    var kind: ReminderLogKind
+    var rows: [ReminderSlotSection]
+
+    var id: Int { kind.rawValue }
+}
+
+struct ReminderLogGroup: Identifiable {
+    var id: UUID?
+    var displayID: String
+    var reminderLabel: String
+    var isDeletedReminder: Bool
+    var sections: [ReminderLogKindSection]
 }

@@ -64,10 +64,19 @@ final class AlarmKitManager {
         )
     }
 
-    func scheduleAlarm(id: UUID, date: Date, reminderId: String, alarmSound: String = "default") async throws {
+    func scheduleAlarm(date: Date, reminderId: String, alarmSound: String = "default") async throws -> UUID {
         let configuration = try await makeConfiguration(date: date, reminderId: reminderId, alarmSound: alarmSound)
-        _ = try await alarmManager.schedule(id: id, configuration: configuration)
-        DiagnosticLog.append(tag: "AlarmKitAPI", message: "scheduleAlarm 成功 id=\(id.uuidString.prefix(8)) date=\(date)")
+        let alarmID = UUID()
+        _ = try await alarmManager.schedule(id: alarmID, configuration: configuration)
+        DiagnosticLog.append(tag: "AlarmKitAPI", message: "scheduleAlarm 成功 id=\(reminderId.prefix(8)) date=\(date)")
+        return alarmID
+    }
+
+    func cancelAlarms(ids: [UUID]) {
+        DiagnosticLog.append(tag: "AlarmKitAPI", message: "cancelAlarms(count=\(ids.count))")
+        for id in ids {
+            cancelAlarm(id: id)
+        }
     }
 
     func cancelAlarm(id: UUID) {

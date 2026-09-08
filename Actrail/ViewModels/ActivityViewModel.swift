@@ -40,6 +40,8 @@ class ActivityViewModel {
     private var syncTimer: Timer?
     private var isAppReady = false
     private let reminderDelegate = ReminderNotificationDelegate()
+    private var suppressPlanAppendsUntil: Date = .distantPast
+    private var clearMarkedTime: Date = .distantPast
 
     private var cachedTypes: [WatchSyncManager.SyncedActivityType] = []
     private var cachedActiveRecords: [WatchSyncManager.SyncedActivityRecord] = []
@@ -106,9 +108,10 @@ class ActivityViewModel {
             self.syncTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     guard let self, self.modelContext != nil else { return }
+                    self.markExpiredPlans()
                     self.rebuildCache()
                     self.sendSync()
-                    self.cancelExpiredAlarms()
+                    self.extendReminderSchedules()
                 }
             }
         }
@@ -122,6 +125,7 @@ class ActivityViewModel {
                 guard self?.isAppReady == true else { return }
                 self?.rebuildCache()
                 self?.sendSync()
+                self?.extendReminderSchedules()
             }
         }
 
@@ -132,6 +136,7 @@ class ActivityViewModel {
                 guard self?.isAppReady == true else { return }
                 self?.rebuildCache()
                 self?.sendSync()
+                self?.extendReminderSchedules()
             }
         }
 
@@ -160,9 +165,15 @@ class ActivityViewModel {
         }
 
         cachedReminders = reminders.filter(\.isEnabled).map { reminder in
-            WatchSyncManager.SyncedReminder(
+            let now = Date()
+            let watchPlanID = reminderLogs
+                .filter { $0.reminderID == reminder.id && $0.source == "iWatch 计划" && $0.presetTime > now }
+                .min { $0.presetTime < $1.presetTime }?
+                .id
+            return WatchSyncManager.SyncedReminder(
                 id: reminder.id,
-                date: reminder.date
+                date: reminder.date,
+                watchPlanID: watchPlanID
             )
         }
     }
@@ -261,14 +272,6 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     func startActivity(_ type: ActivityType) {
         guard let context = modelContext else { return }
 
-        // 用户点击活动按钮 = 开始工作 = 立即取消闹钟振动
-        // 不检查 activeRecords，因为新活动记录尚未创建
-        for reminder in reminders where reminder.alarmEnabled {
-            DiagnosticLog.append(tag: "AlarmCancel", message: "startActivity 无条件取消闹钟 id=\(reminder.id.uuidString.prefix(8))")
-            AlarmKitManager.shared.stopAlarm(id: reminder.id)
-            markAlarmCancelled(reminderID: reminder.id)
-        }
-
         if activeRecords.contains(where: { $0.activityType?.id == type.id && $0.isActive }) {
             return
         }
@@ -281,6 +284,22 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             return
         }
         lastStartActivityDate = now
+
+        // 用户点击活动按钮 = 开始工作 = 立即取消闹钟振动
+        // 需在防重放合并之后执行，避免一次点击为每种类型各取消一次闹钟
+        let todayKey = Self.reminderDayKey(Date())
+        for index in reminders.indices where reminders[index].alarmEnabled {
+            let reminder = reminders[index]
+            DiagnosticLog.append(tag: "AlarmCancel", message: "startActivity 三边取消 id=\(reminder.id.uuidString.prefix(8))")
+            if let alarmID = reminder.scheduledAlarmIDs[todayKey] {
+                AlarmKitManager.shared.cancelAlarm(id: alarmID)
+            }
+            appendCancelledEntries(for: reminder, date: Date())
+            // 当日排定作废，下次打开时自动续排
+            reminders[index].scheduledDates.removeAll { Calendar.current.isDate($0, inSameDayAs: Date()) }
+            reminders[index].scheduledAlarmIDs[todayKey] = nil
+        }
+        ActivityReminder.saveAll(reminders)
 
         let record = ActivityRecord(activityType: type)
         context.insert(record)
@@ -371,16 +390,155 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
         let reminder = ActivityReminder(date: date, alarmEnabled: alarmEnabled, alarmGraceMinutes: alarmGraceMinutes, alarmSound: alarmSound)
         reminders.append(reminder)
         ActivityReminder.saveAll(reminders)
-        schedulePhoneNotification(for: reminder)
+        extendReminderSchedules()
         pushRemindersToWatch()
-        logWatchSchedule(date: date)
     }
 
     func deleteReminder(_ reminder: ActivityReminder) {
+        DiagnosticLog.append(tag: "ReminderDelete", message: "删除提醒 id=\(reminder.id.uuidString.prefix(8))")
+        cancelPhoneNotification(for: reminder)
         reminders.removeAll { $0.id == reminder.id }
         ActivityReminder.saveAll(reminders)
-        cancelPhoneNotification(for: reminder)
+        reminderLogs.removeAll { $0.reminderID == reminder.id }
+        ReminderLogEntry.saveAll(reminderLogs)
         pushRemindersToWatch()
+        appendReminderLog(ReminderLogEntry(
+            content: "已删除「\(reminder.timeString)」（iPhone/iWatch 通知与闹钟均已撤销）",
+            presetTime: Date(),
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "提醒已删除",
+            reminderID: reminder.id
+        ))
+    }
+
+    /// 提醒历史三层归档：
+/// 第 1 层 提醒记录（每个提醒一组）；
+/// 第 2 层 该提醒内的 iPhone 计划 / iWatch 计划 / 闹钟计划，同一预设时间的归档为一条；
+/// 第 3 层 该条里按时间顺序展示预设、发出、确认、取消等全部操作记录。
+    func reminderLogGroups() -> [ReminderLogGroup] {
+        let grouped = Dictionary(grouping: reminderLogs) { $0.reminderID }
+        var groups: [ReminderLogGroup] = []
+        for (rid, logs) in grouped {
+            let reminder = rid.flatMap { id in reminders.first(where: { $0.id == id }) }
+            let isDeleted = rid != nil && reminder == nil
+            let displayID = rid.map { "#\(String($0.uuidString.prefix(8)).uppercased())" } ?? "无关联提醒"
+            let label: String
+            if let reminder {
+                label = reminder.timeString
+            } else if isDeleted {
+                label = "已删除提醒"
+            } else {
+                label = "未知提醒（无编号）"
+            }
+
+            let planSources: Set<String> = ["iPhone 计划", "iWatch 计划", "闹钟计划"]
+            let operationSources: Set<String> = ["iPhone 本地通知", "iWatch 本地通知", "iPhone 已确认", "iWatch 已确认"]
+            let planLogs = logs.filter { planSources.contains($0.source) }
+            let opLogs = logs.filter { operationSources.contains($0.source) }
+            let otherLogs = logs.filter { !planSources.contains($0.source) && !operationSources.contains($0.source) }
+
+            var rowsByKind: [ReminderLogKind: [ReminderSlotSection]] = [:]
+            var matchedOpIDs = Set<UUID>()
+
+            for kind in [ReminderLogKind.phone, .watch, .alarm] {
+                let kindPlans = planLogs.filter { $0.kind == kind }
+                let groupedByDay = Dictionary(grouping: kindPlans) { Self.reminderDayKey($0.presetTime) }
+                let dayKeys = groupedByDay.keys.sorted { a, b in
+                    let ta = groupedByDay[a, default: []].first?.presetTime ?? .distantPast
+                    let tb = groupedByDay[b, default: []].first?.presetTime ?? .distantPast
+                    return ta > tb
+                }
+                var rows: [ReminderSlotSection] = []
+                for dayKey in dayKeys {
+                    let plans = groupedByDay[dayKey, default: []].sorted { $0.presetTime < $1.presetTime }
+                    guard let reference = plans.first else { continue }
+                    let planIDs = Set(plans.map(\.id))
+                    let related = opLogs.filter { op in
+                        if let pid = op.planID, planIDs.contains(pid) { return true }
+                        guard op.kind == kind else { return false }
+                        let t0 = plans.map(\.presetTime).min() ?? reference.presetTime
+                        let t1 = plans.map(\.presetTime).max() ?? reference.presetTime
+                        return op.presetTime >= t0.addingTimeInterval(-120) && op.presetTime <= t1.addingTimeInterval(120)
+                    }
+                    matchedOpIDs.formUnion(related.map(\.id))
+                    let finalPlan = plans.last
+                    let finalStatus = finalPlan.map { $0.status.isEmpty ? "已设定" : $0.status } ?? ""
+                    rows.append(ReminderSlotSection(
+                        id: "\(rid?.uuidString ?? "-")|\(kind.rawValue)|\(dayKey)",
+                        kind: kind,
+                        slotLabel: Self.slotLabel(for: reference.presetTime),
+                        finalStatus: finalStatus,
+                        logs: Self.sortLogs(plans + related)
+                    ))
+                }
+                rows.sort { a, b in
+                    let ta = a.logs.first(where: { Self.planSource(of: a.kind) == $0.source })?.presetTime ?? .distantPast
+                    let tb = b.logs.first(where: { Self.planSource(of: b.kind) == $0.source })?.presetTime ?? .distantPast
+                    return ta > tb
+                }
+                if !rows.isEmpty { rowsByKind[kind] = rows }
+            }
+
+            let unmatchedOps = opLogs.filter { !matchedOpIDs.contains($0.id) }
+            if !otherLogs.isEmpty || !unmatchedOps.isEmpty {
+                rowsByKind[.other] = [ReminderSlotSection(
+                    id: "\(rid?.uuidString ?? "-")|other",
+                    kind: .other,
+                    slotLabel: "其它",
+                    finalStatus: "\(otherLogs.count + unmatchedOps.count) 条",
+                    logs: Self.sortLogs(otherLogs + unmatchedOps)
+                )]
+            }
+
+            var kindSections: [ReminderLogKindSection] = []
+            for kind in [ReminderLogKind.other, .phone, .watch, .alarm] {
+                guard let rows = rowsByKind[kind], !rows.isEmpty else { continue }
+                kindSections.append(ReminderLogKindSection(kind: kind, rows: rows))
+            }
+
+            groups.append(ReminderLogGroup(
+                id: rid,
+                displayID: displayID,
+                reminderLabel: isDeleted ? "\(label)（已删除）" : label,
+                isDeletedReminder: isDeleted,
+                sections: kindSections
+            ))
+        }
+        groups.sort { a, b in
+            let la = a.sections.first?.rows.first?.logs.first?.sentTime ?? .distantPast
+            let lb = b.sections.first?.rows.first?.logs.first?.sentTime ?? .distantPast
+            return la > lb
+        }
+        return groups
+    }
+
+    private static func planSource(of kind: ReminderLogKind) -> String {
+        switch kind {
+        case .phone: return "iPhone 计划"
+        case .watch: return "iWatch 计划"
+        case .alarm: return "闹钟计划"
+        case .other: return ""
+        }
+    }
+
+    private static func slotLabel(for date: Date) -> String {
+        let cal = Calendar.current
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+        let time = timeFormatter.string(from: date)
+        if cal.isDateInToday(date) { return "今天 \(time)" }
+        if cal.isDateInTomorrow(date) { return "明天 \(time)" }
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "MM/dd"
+        return "\(dayFormatter.string(from: date)) \(time)"
+    }
+
+    private static func sortLogs(_ logs: [ReminderLogEntry]) -> [ReminderLogEntry] {
+        logs.sorted { a, b in
+            if a.sentTime != b.sentTime { return a.sentTime < b.sentTime }
+            return a.presetTime < b.presetTime
+        }
     }
 
     // MARK: - Watch Reminder
@@ -395,7 +553,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             reminders[index].isEnabled.toggle()
             ActivityReminder.saveAll(reminders)
             if reminders[index].isEnabled {
-                schedulePhoneNotification(for: reminders[index])
+                extendReminderSchedules()
             } else {
                 cancelPhoneNotification(for: reminders[index])
             }
@@ -406,6 +564,28 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     func testReminderOnWatch() {
         pushRemindersToWatch()
         syncManager.sendReminderTest()
+    }
+
+    func clearRemindersAndLogs() {
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { requests in
+            let ids = requests
+                .filter { $0.identifier.hasPrefix("reminder-") }
+                .map(\.identifier)
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+        }
+        for reminder in reminders where reminder.alarmEnabled {
+            AlarmKitManager.shared.cancelAlarms(ids: Array(reminder.scheduledAlarmIDs.values))
+        }
+        reminders.removeAll()
+        ActivityReminder.saveAll(reminders)
+        // 清空全部日志，包含 iPhone 计划 / iWatch 计划 / 闹钟计划及全部历史
+        reminderLogs.removeAll()
+        ReminderLogEntry.saveAll(reminderLogs)
+        // 抑制随后异步回调（通知 add / AlarmKit / watch 同步）把计划日志再写回来
+        clearMarkedTime = Date()
+        suppressPlanAppendsUntil = clearMarkedTime.addingTimeInterval(120)
+        pushRemindersToWatch()
     }
 
     func rescheduleAllPhoneNotificationsPublic() {
@@ -437,9 +617,10 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             }
         }
 
-        reminderDelegate.onTapped = { [weak self] _ in
+        reminderDelegate.onTapped = { [weak self] response in
             DispatchQueue.main.async {
-                self?.logPhoneNotificationTapped()
+                let planID = (response.notification.request.content.userInfo["planID"] as? String).flatMap(UUID.init(uuidString:))
+                self?.logPhoneNotificationTapped(planID: planID)
             }
         }
 
@@ -448,12 +629,12 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             DispatchQueue.main.async {
                 switch settings.authorizationStatus {
                 case .authorized, .provisional, .ephemeral:
-                    self?.rescheduleAllPhoneNotifications()
+                    self?.extendReminderSchedules()
                 case .notDetermined:
                     centerGet.requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
                         DispatchQueue.main.async {
                             guard granted else { return }
-                            self?.rescheduleAllPhoneNotifications()
+                            self?.extendReminderSchedules()
                         }
                     }
                 case .denied:
@@ -468,6 +649,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     private func logPhoneNotificationFired(_ notification: UNNotification) {
         let contentObject = notification.request.content
         let presetTime = contentObject.userInfo["presetTime"] as? Date ?? Date()
+        let planID = (contentObject.userInfo["planID"] as? String).flatMap(UUID.init(uuidString:))
         let content = contentObject.body.isEmpty
             ? contentObject.title
             : contentObject.body
@@ -476,14 +658,18 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             presetTime: presetTime,
             sentTime: Date(),
             sentSuccessfully: true,
-            source: "iPhone 本地通知"
+            source: "iPhone 本地通知",
+            planID: planID
         )
         appendReminderLog(entry)
     }
 
     private func appendReminderLog(_ entry: ReminderLogEntry) {
-        if entry.source == "iPhone 计划" || entry.source == "iWatch 计划" {
+        if ["iPhone 计划", "iWatch 计划", "闹钟计划"].contains(entry.source) {
+            // 清空后的抑制窗口内，不再把计划日志写回来
+            if Date() < suppressPlanAppendsUntil && entry.presetTime > clearMarkedTime { return }
             let alreadyExists = reminderLogs.contains { existing in
+                existing.reminderID == entry.reminderID &&
                 existing.source == entry.source &&
                 existing.content == entry.content &&
                 Calendar.current.isDate(existing.presetTime, inSameDayAs: Date())
@@ -497,57 +683,222 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
         ReminderLogEntry.saveAll(reminderLogs)
     }
 
+    private static let logDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm"
+        return f
+    }()
+
+    private func existingPlanID(reminder: ActivityReminder, date: Date, source: String) -> UUID? {
+        reminderLogs.first { log in
+            log.reminderID == reminder.id &&
+            log.source == source &&
+            Calendar.current.isDate(log.presetTime, inSameDayAs: date)
+        }?.id
+    }
+
+    private func makePlanEntries(for reminder: ActivityReminder, date: Date) -> (iPhone: ReminderLogEntry, iWatch: ReminderLogEntry) {
+        let time = Self.logDateFormatter.string(from: date)
+        let iphone = ReminderLogEntry(
+            content: "已安排提醒 \(time)（等待系统投递）",
+            presetTime: date,
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "iPhone 计划",
+            status: "计划中",
+            reminderID: reminder.id,
+            id: existingPlanID(reminder: reminder, date: date, source: "iPhone 计划") ?? UUID()
+        )
+        let watch = ReminderLogEntry(
+            content: "iWatch 排定提醒 \(time)（等待系统投递）",
+            presetTime: date,
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "iWatch 计划",
+            status: "计划中",
+            reminderID: reminder.id,
+            id: existingPlanID(reminder: reminder, date: date, source: "iWatch 计划") ?? UUID()
+        )
+        return (iphone, watch)
+    }
+
+    private func appendCancelledEntries(for reminder: ActivityReminder, date: Date) {
+        let time = Self.logDateFormatter.string(from: date)
+        var entries: [ReminderLogEntry] = []
+        if reminder.alarmEnabled {
+            entries.append(ReminderLogEntry(
+                content: "闹钟 \(time) 已取消",
+                presetTime: date,
+                sentTime: Date(),
+                sentSuccessfully: true,
+                source: "闹钟计划",
+                status: "已取消",
+                reminderID: reminder.id
+            ))
+        }
+        let iphone = ReminderLogEntry(
+            content: "iPhone 提醒 \(time) 当日作废（已确认活动）",
+            presetTime: date,
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "iPhone 计划",
+            status: "已取消",
+            reminderID: reminder.id
+        )
+        let watch = ReminderLogEntry(
+            content: "iWatch 提醒 \(time) 当日作废（已确认活动）",
+            presetTime: date,
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "iWatch 计划",
+            status: "已取消",
+            reminderID: reminder.id
+        )
+        appendReminderLog(iphone)
+        appendReminderLog(watch)
+        entries.forEach { appendReminderLog($0) }
+    }
+
     func deleteReminderLog(_ log: ReminderLogEntry) {
         reminderLogs.removeAll { $0.id == log.id }
         ReminderLogEntry.saveAll(reminderLogs)
     }
 
-    func logWatchSchedule(date: Date) {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd HH:mm"
-        let content = "iWatch 排定提醒 \(f.string(from: date))（等待系统投递）"
-        let entry = ReminderLogEntry(
-            content: content,
-            presetTime: Date(),
-            sentTime: Date(),
-            sentSuccessfully: true,
-            source: "iWatch 计划"
-        )
-        appendReminderLog(entry)
+    /// 撤销某提醒某天的底层调度：AlarmKit 闹钟 + 当天 pending 通知。
+    private func deactivatePlanSlot(reminderID: UUID?, at date: Date) {
+        let dayKey = Self.reminderDayKey(date)
+        if let reminderID {
+            if let idx = reminders.firstIndex(where: { $0.id == reminderID }),
+               let alarmID = reminders[idx].scheduledAlarmIDs[dayKey] {
+                AlarmKitManager.shared.cancelAlarms(ids: [alarmID])
+                reminders[idx].scheduledAlarmIDs.removeValue(forKey: dayKey)
+                ActivityReminder.saveAll(reminders)
+            }
+            let identifier = "reminder-\(reminderID.uuidString)-\(dayKey)"
+            UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+                let ids = requests
+                    .filter { $0.identifier == identifier }
+                    .map(\.identifier)
+                if !ids.isEmpty {
+                    UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+                }
+            }
+        }
     }
 
-    private func logPhoneNotificationTapped() {
+    private func markExpiredPlans() {
+        let now = Date()
+        // 是否有进行中活动：有活动 = 已确认提醒目的达成 → 三条全取消；
+        // 无活动 = 保留闹钟（让 n 分钟后闹钟再强烈提醒），iPhone/iWatch
+        // 计划按「通知是否实际发出」区分为「已过期」（发出过）或「已取消」（未发出被撤销）
+        let hasActive = activeRecords.contains { $0.isActive }
+        var changed = false
+        for index in reminderLogs.indices {
+            guard reminderLogs[index].status == "计划中" else { continue }
+            let source = reminderLogs[index].source
+            let isPhoneOrWatch = source == "iPhone 计划" || source == "iWatch 计划"
+            let isAlarm = source == "闹钟计划"
+            guard isPhoneOrWatch || isAlarm else { continue }
+            guard now > reminderLogs[index].presetTime else { continue }
+            if isAlarm {
+                // 无活动时保留闹钟计划，让 n 分钟后闹钟强烈提醒
+                if !hasActive { continue }
+                reminderLogs[index].status = "已取消"
+                // 真正撤销当天已排定的 AlarmKit 闹钟与 pending 通知
+                deactivatePlanSlot(reminderID: reminderLogs[index].reminderID, at: reminderLogs[index].presetTime)
+            } else if hasActive {
+                reminderLogs[index].status = "已取消"
+                deactivatePlanSlot(reminderID: reminderLogs[index].reminderID, at: reminderLogs[index].presetTime)
+            } else {
+                // 无活动：按通知是否实际发出区分（优先 planID 精确匹配，缺省回退到时间窗口）
+                let delivered = reminderLogs.contains { log in
+                    let s = log.source
+                    guard s == "iPhone 本地通知" || s == "iWatch 本地通知" ||
+                          s == "iPhone 已确认" || s == "iWatch 已确认" else { return false }
+                    if let pid = reminderLogs[index].planID, let logPid = log.planID {
+                        return pid == logPid
+                    }
+                    return abs(log.presetTime.timeIntervalSince(reminderLogs[index].presetTime)) < 120
+                }
+                reminderLogs[index].status = delivered ? "已过期" : "已取消"
+                // 未实际发出的 iPhone/iWatch 计划可能残留底层 pending 通知，一并撤销
+                if !delivered {
+                    deactivatePlanSlot(reminderID: reminderLogs[index].reminderID, at: reminderLogs[index].presetTime)
+                }
+            }
+            reminderLogs[index].sentTime = now
+            changed = true
+        }
+        if changed {
+            ReminderLogEntry.saveAll(reminderLogs)
+        }
+    }
+
+    private func logPhoneNotificationTapped(planID: UUID?) {
         let entry = ReminderLogEntry(
             content: "已确认收到提醒",
             presetTime: Date(),
             sentTime: Date(),
             sentSuccessfully: true,
-            source: "iPhone 已确认"
+            source: "iPhone 已确认",
+            planID: planID
         )
         appendReminderLog(entry)
     }
 
-    private func rescheduleAllPhoneNotifications() {
-        for reminder in reminders where reminder.isEnabled {
-            schedulePhoneNotification(for: reminder)
+    // MARK: - 滚动 3 天提醒排定
+    //
+    // 每次 App 打开/被唤醒时调用：为每个开启的提醒保证未来 3 天（今天起算，
+    // 若当天该时刻已过则从下一天起算）都有本地通知与 AlarmKit 闹钟。
+    // 连续 3 天未打开（iPhone/iWatch）则排定自然耗尽，不再提醒。
+    private static func reminderDayKey(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd"
+        return f.string(from: date)
+    }
+
+    func extendReminderSchedules() {
+        guard !reminders.isEmpty else { return }
+        let calendar = Calendar.current
+        let now = Date()
+        for index in reminders.indices where reminders[index].isEnabled {
+            let reminder = reminders[index]
+            var scheduled = reminder.scheduledDates.filter { $0 > now }
+            let hour = calendar.component(.hour, from: reminder.date)
+            let minute = calendar.component(.minute, from: reminder.date)
+            var day = calendar.startOfDay(for: now)
+            var guardCount = 0
+            while scheduled.count < 3 && guardCount < 31 {
+                guardCount += 1
+                guard let candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) else {
+                    break
+                }
+                if candidate <= now {
+                    // 当天该时刻已过：从下一天起算
+                    day = calendar.date(byAdding: .day, value: 1, to: day) ?? day
+                    continue
+                }
+                if !scheduled.contains(where: { calendar.isDate($0, inSameDayAs: candidate) }) {
+                    self.scheduleReminderSlot(reminder, at: candidate)
+                    scheduled.append(candidate)
+                }
+                day = calendar.date(byAdding: .day, value: 1, to: day) ?? day
+            }
+            if scheduled != reminder.scheduledDates {
+                reminders[index].scheduledDates = scheduled
+                ActivityReminder.saveAll(reminders)
+            }
         }
     }
 
-    private func schedulePhoneNotification(for reminder: ActivityReminder) {
+    private func scheduleReminderSlot(_ reminder: ActivityReminder, at date: Date) {
         guard reminder.isEnabled else { return }
-
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
             guard let self else { return }
             guard settings.authorizationStatus == .authorized ||
                   settings.authorizationStatus == .provisional ||
                   settings.authorizationStatus == .ephemeral else {
-                print("[Reminder] permission not granted, cannot schedule \(reminder.id)")
-                return
-            }
-
-            // 检查提醒时间是否已过
-            guard reminder.date > Date() else {
-                print("[Reminder] \(reminder.id) already past, skipping")
+                print("[Reminder] permission not granted, cannot schedule slot")
                 return
             }
 
@@ -555,52 +906,51 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             content.title = "行迹提醒"
             content.body = "请检查当前正在进行的活动是否正确"
             content.sound = reminder.alarmSound == "none" ? nil : .default
-            content.userInfo = ["presetTime": reminder.date]
+            let entries = self.makePlanEntries(for: reminder, date: date)
+            content.userInfo = [
+                "presetTime": date,
+                "reminderId": reminder.id.uuidString,
+                "planID": entries.iPhone.id.uuidString,
+                "watchPlanID": entries.iWatch.id.uuidString
+            ]
 
             let dateComponents = Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute],
-                from: reminder.date
+                from: date
             )
 
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: false)
             let request = UNNotificationRequest(
-                identifier: "reminder-\(reminder.id.uuidString)",
+                identifier: "reminder-\(reminder.id.uuidString)-\(Self.reminderDayKey(date))",
                 content: content,
                 trigger: trigger
             )
-            UNUserNotificationCenter.current().add(request) { [weak self] error in
+UNUserNotificationCenter.current().add(request) { [weak self] error in
                 guard let self else { return }
                 if let error = error {
-                    print("[Reminder] schedule failed for \(reminder.id): \(error)")
+                    print("[Reminder] schedule failed for slot \(date): \(error)")
                 } else {
-                    let f = DateFormatter()
-                    f.dateFormat = "MM/dd HH:mm"
-                    print("[Reminder] scheduled \(reminder.id) for \(f.string(from: reminder.date))")
-                    let entry = ReminderLogEntry(
-                        content: "已安排提醒 \(f.string(from: reminder.date))（等待系统投递）",
-                        presetTime: reminder.date,
-                        sentTime: Date(),
-                        sentSuccessfully: true,
-                        source: "iPhone 计划"
-                    )
                     DispatchQueue.main.async {
-                        self.appendReminderLog(entry)
-                        print("[Reminder] alarmEnabled=\(reminder.alarmEnabled), grace=\(reminder.alarmGraceMinutes)min")
+                        self.appendReminderLog(entries.iPhone)
+                        self.appendReminderLog(entries.iWatch)
                         if reminder.alarmEnabled {
-                            DiagnosticLog.append(tag: "AlarmSchedule", message: "alarmEnabled=true → 调用 scheduleAlarm id=\(reminder.id.uuidString.prefix(8))")
-                            self.scheduleAlarm(for: reminder)
-                        } else {
-                            DiagnosticLog.append(tag: "AlarmCancel", message: "alarmEnabled=false → cancelAlarm id=\(reminder.id.uuidString.prefix(8))")
-                            AlarmKitManager.shared.cancelAlarm(id: reminder.id)
+                            DiagnosticLog.append(tag: "AlarmSchedule", message: "alarmEnabled=true → scheduleAlarm slot \(date)")
+                            self.scheduleAlarm(for: reminder, onDate: date) { alarmID in
+                                let dayKeyValue = Self.reminderDayKey(date)
+                                if let idx = self.reminders.firstIndex(where: { $0.id == reminder.id }) {
+                                    self.reminders[idx].scheduledAlarmIDs[dayKeyValue] = alarmID
+                                    ActivityReminder.saveAll(self.reminders)
+                                }
+                            }
                         }
-                    }
-                }
             }
         }
     }
+        }
+    }
 
-    private func scheduleAlarm(for reminder: ActivityReminder) {
-        DiagnosticLog.append(tag: "AlarmSchedule", message: "scheduleAlarm 进入 id=\(reminder.id.uuidString.prefix(8)) enabled=\(reminder.alarmEnabled) grace=\(reminder.alarmGraceMinutes)")
+    private func scheduleAlarm(for reminder: ActivityReminder, onDate reminderDate: Date, completion: ((UUID) -> Void)? = nil) {
+        DiagnosticLog.append(tag: "AlarmSchedule", message: "scheduleAlarm 进入 id=\(reminder.id.uuidString.prefix(8)) date=\(reminderDate)")
         Task {
             let authed = await AlarmKitManager.shared.ensureAuthorized()
             DiagnosticLog.append(tag: "AlarmSchedule", message: "ensureAuthorized=\(authed)")
@@ -611,20 +961,20 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             let alarmDate = Calendar.current.date(
                 byAdding: .minute,
                 value: reminder.alarmGraceMinutes,
-                to: reminder.date
-            ) ?? reminder.date
+                to: reminderDate
+            ) ?? reminderDate
             let f = DateFormatter()
             f.dateFormat = "MM/dd HH:mm:ss"
-            DiagnosticLog.append(tag: "AlarmSchedule", message: "排定闹钟 \(f.string(from: alarmDate)) (reminder=\(f.string(from: reminder.date)), grace=\(reminder.alarmGraceMinutes)min)")
+            DiagnosticLog.append(tag: "AlarmSchedule", message: "排定闹钟 \(f.string(from: alarmDate)) (slot=\(f.string(from: reminderDate)), grace=\(reminder.alarmGraceMinutes)min)")
             do {
-                try await AlarmKitManager.shared.scheduleAlarm(
-                    id: reminder.id,
+                let alarmID = try await AlarmKitManager.shared.scheduleAlarm(
                     date: alarmDate,
                     reminderId: reminder.id.uuidString,
                     alarmSound: reminder.alarmSound
                 )
                 DiagnosticLog.append(tag: "AlarmSchedule", message: "✓ 闹钟排定成功 id=\(reminder.id.uuidString.prefix(8))")
-                appendAlarmPlan(reminder: reminder, alarmDate: alarmDate)
+                appendAlarmPlan(reminder: reminder, alarmDate: alarmDate, slotDate: reminderDate)
+                completion?(alarmID)
             } catch {
                 DiagnosticLog.append(tag: "AlarmSchedule", message: "✗ 排定失败: \(error.localizedDescription)")
                 appendReminderLog(ReminderLogEntry(
@@ -639,32 +989,19 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     }
 
     func stopAlarmIfActiveActivity() {
-        cancelExpiredAlarms()
+        // 打开 App = 确认还在用；先取消已到点的计划，再自动续排未来 3 天提醒
+        markExpiredPlans()
+        extendReminderSchedules()
     }
 
-    private func cancelExpiredAlarms() {
-        let now = Date()
-        for reminder in reminders where reminder.alarmEnabled && reminder.isEnabled {
-            if now > reminder.date {
-                let alreadyCancelled = reminderLogs.contains {
-                    $0.reminderID == reminder.id && $0.status == "已取消"
-                }
-                if !alreadyCancelled {
-                    AlarmKitManager.shared.cancelAlarm(id: reminder.id)
-                    markAlarmCancelled(reminderID: reminder.id)
-                }
-            }
-        }
-    }
-
-    private func appendAlarmPlan(reminder: ActivityReminder, alarmDate: Date) {
+    private func appendAlarmPlan(reminder: ActivityReminder, alarmDate: Date, slotDate: Date) {
         let f = DateFormatter()
         f.dateFormat = "MM/dd HH:mm"
-        let content = "闹钟已排定 \(f.string(from: reminder.date)) + \(reminder.alarmGraceMinutes) 分钟 → \(f.string(from: alarmDate))"
+        let content = "闹钟已排定 \(f.string(from: alarmDate))（+\(reminder.alarmGraceMinutes) 分钟）"
         DispatchQueue.main.async {
             self.appendReminderLog(ReminderLogEntry(
                 content: content,
-                presetTime: Date(),
+                presetTime: slotDate,
                 sentTime: Date(),
                 sentSuccessfully: true,
                 source: "闹钟计划",
@@ -674,33 +1011,21 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
         }
     }
 
-    private func markAlarmCancelled(reminderID: UUID) {
-        DispatchQueue.main.async {
-            if let index = self.reminderLogs.firstIndex(where: {
-                $0.reminderID == reminderID && $0.source == "闹钟计划" && $0.status == "计划中"
-            }) {
-                self.reminderLogs[index].status = "已取消"
-                self.reminderLogs[index].sentTime = Date()
-                ReminderLogEntry.saveAll(self.reminderLogs)
-            } else {
-                self.appendReminderLog(ReminderLogEntry(
-                    content: "闹钟已停止（打开 App 且存在进行中活动）",
-                    presetTime: Date(),
-                    sentTime: Date(),
-                    sentSuccessfully: true,
-                    source: "闹钟已取消",
-                    status: "已取消",
-                    reminderID: reminderID
-                ))
-            }
-        }
-    }
-
     private func cancelPhoneNotification(for reminder: ActivityReminder) {
         DiagnosticLog.append(tag: "AlarmCancel", message: "cancelPhoneNotification id=\(reminder.id.uuidString.prefix(8))")
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: ["reminder-\(reminder.id.uuidString)"])
-        AlarmKitManager.shared.cancelAlarm(id: reminder.id)
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { requests in
+            let ids = requests
+                .filter { $0.identifier.hasPrefix("reminder-\(reminder.id.uuidString)-") }
+                .map(\.identifier)
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+        }
+        AlarmKitManager.shared.cancelAlarms(ids: Array(reminder.scheduledAlarmIDs.values))
+        if let index = reminders.firstIndex(where: { $0.id == reminder.id }) {
+            reminders[index].scheduledDates.removeAll()
+            reminders[index].scheduledAlarmIDs.removeAll()
+            ActivityReminder.saveAll(reminders)
+        }
     }
 
     // MARK: - Formatting
