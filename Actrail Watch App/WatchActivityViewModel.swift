@@ -9,6 +9,7 @@ enum AppGroupConstant {
     static let activeActivityNameKey = "activeActivityName"
     static let activeStartDateKey = "activeStartDate"
     static let activeBaseMinutesKey = "activeBaseMinutes"
+    static let activeCountKey = "activeCount"
 }
 
 @Observable
@@ -541,6 +542,9 @@ class WatchActivityViewModel {
         let startOfDay = calendar.startOfDay(for: Date())
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
 
+        // 进行中活动数 = 当前所有正在进行的活动个数（不限当日）
+        let activeCount = activeRecords.filter(\.isActive).count
+
         var totalSeconds: TimeInterval = 0
         var activeActivityName: String?
         var activeStart: Date?
@@ -565,6 +569,7 @@ class WatchActivityViewModel {
         let totalMinutes = Int(totalSeconds) / 60
         let shared = UserDefaults(suiteName: AppGroupConstant.suiteName)
         shared?.set(totalMinutes, forKey: AppGroupConstant.todayTotalMinutesKey)
+        shared?.set(activeCount, forKey: AppGroupConstant.activeCountKey)
 
         if let start = activeStart {
             let baseSeconds = totalSeconds - Date().timeIntervalSince(start)

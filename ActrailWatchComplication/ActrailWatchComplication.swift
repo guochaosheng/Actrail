@@ -20,12 +20,20 @@ struct ActrailWatchComplicationEntryView: View {
             }
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                Text("今日活动")
+                Text("今日活动时长")
                     .font(.system(size: 10))
                     .minimumScaleFactor(0.8)
-                Text("\(entry.totalMinutes)分钟")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .minimumScaleFactor(0.8)
+                HStack(spacing: 6) {
+                    Text("\(entry.totalMinutes)分钟")
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .minimumScaleFactor(0.8)
+                    if entry.activeCount > 0 {
+                        Text("进行中 \(entry.activeCount) 个")
+                            .font(.system(size: 11, weight: .medium, design: .rounded))
+                            .foregroundColor(.orange)
+                            .minimumScaleFactor(0.7)
+                    }
+                }
             }
         case .accessoryInline:
             Text("\(entry.totalMinutes)分钟")
@@ -47,6 +55,7 @@ struct ActrailWatchComplicationEntryView: View {
 struct ActivityEntry: TimelineEntry {
     let date: Date
     let totalMinutes: Int
+    let activeCount: Int
 }
 
 enum AppGroupConstant {
@@ -55,6 +64,7 @@ enum AppGroupConstant {
     static let activeActivityNameKey = "activeActivityName"
     static let activeStartDateKey = "activeStartDate"
     static let activeBaseMinutesKey = "activeBaseMinutes"
+    static let activeCountKey = "activeCount"
 }
 
 struct ActivityTimelineProvider: TimelineProvider {
@@ -70,13 +80,17 @@ struct ActivityTimelineProvider: TimelineProvider {
         UserDefaults(suiteName: AppGroupConstant.suiteName)?.integer(forKey: AppGroupConstant.activeBaseMinutesKey) ?? sharedTotalMinutes()
     }
 
+    func sharedActiveCount() -> Int {
+        UserDefaults(suiteName: AppGroupConstant.suiteName)?.integer(forKey: AppGroupConstant.activeCountKey) ?? 0
+    }
+
     func currentEntry() -> ActivityEntry {
         if let start = sharedActiveStart() {
             let base = sharedActiveBase()
             let minutes = base + Int(Date().timeIntervalSince(start)) / 60
-            return ActivityEntry(date: Date(), totalMinutes: minutes)
+            return ActivityEntry(date: Date(), totalMinutes: minutes, activeCount: sharedActiveCount())
         }
-        return ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes())
+        return ActivityEntry(date: Date(), totalMinutes: sharedTotalMinutes(), activeCount: sharedActiveCount())
     }
 
     func placeholder(in context: Context) -> ActivityEntry {
@@ -91,15 +105,16 @@ struct ActivityTimelineProvider: TimelineProvider {
         let now = Date()
         if let start = sharedActiveStart() {
             let base = sharedActiveBase()
+            let activeCount = sharedActiveCount()
             var entries: [ActivityEntry] = []
             for i in 0..<60 {
                 let date = now.addingTimeInterval(TimeInterval(i * 60))
                 let minutes = base + Int(date.timeIntervalSince(start)) / 60
-                entries.append(ActivityEntry(date: date, totalMinutes: minutes))
+                entries.append(ActivityEntry(date: date, totalMinutes: minutes, activeCount: activeCount))
             }
             completion(Timeline(entries: entries, policy: .atEnd))
         } else {
-            let entry = ActivityEntry(date: now, totalMinutes: sharedTotalMinutes())
+            let entry = ActivityEntry(date: now, totalMinutes: sharedTotalMinutes(), activeCount: sharedActiveCount())
             let nextUpdate = now.addingTimeInterval(30 * 60)
             completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
         }
@@ -114,8 +129,8 @@ struct ActrailWatchComplication: Widget {
             ActrailWatchComplicationEntryView(entry: entry)
                 .containerBackground(for: .widget) { Color.clear }
         }
-        .configurationDisplayName("今日活动")
-        .description("显示今日活动总时长")
+        .configurationDisplayName("今日活动时长")
+        .description("显示今日活动总时长与进行中活动数")
         .supportedFamilies([
             .accessoryCircular,
             .accessoryRectangular
