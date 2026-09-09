@@ -1,6 +1,9 @@
 import Foundation
 import WatchConnectivity
 import Observation
+import os
+
+let iphoneSyncLog = Logger(subsystem: "com.actrail.app", category: "iphoneSync")
 
 @Observable
 class WatchSyncManager {
@@ -64,6 +67,8 @@ class WatchSyncManager {
         self.onActivityUpdate = handler
     }
 
+    private var lastComplicationCount: Int?
+
     func sendActivityUpdate(types: [SyncedActivityType], activeRecords: [SyncedActivityRecord], completedRecords: [SyncedActivityRecord], reminders: [SyncedReminder]) {
         let message = SyncMessage(
             activityTypes: types,
@@ -83,13 +88,29 @@ class WatchSyncManager {
 
         lastActivityData = data
 
+        print("[iPhone Sync] sendActivityUpdate: active=\(activeRecords.filter(\.isActive).count), completed=\(completedRecords.count), activated=\(session.activationState == .activated)")
+
         if session.activationState == .activated {
             session.sendMessage(userInfo, replyHandler: nil) { error in
                 print("[iPhone Sync] sendMessage failed: \(error)，改用 transferUserInfo 兜底")
                 WCSession.default.transferUserInfo(userInfo)
             }
+            // applicationContext 兜底：即使 watch app 未运行也保留最新快照，
+            // watch 端 didReceiveApplicationContext 收到后会立即更新 AppGroup 与 widget。
+            try? session.updateApplicationContext(userInfo)
+            print("[iPhone Sync] applicationContext updated")
         } else {
             session.transferUserInfo(userInfo)
+        }
+
+        // 表盘专用通道：仅在进行中活动数变化时发送。
+        // transferCurrentComplicationUserInfo 是 iOS→watchOS 官方机制：
+        // 即使 watch app 未运行，watch 系统也会后台启动它处理并刷新表盘。
+        let activeCount = activeRecords.filter(\.isActive).count
+        if session.activationState == .activated, activeCount != lastComplicationCount {
+            lastComplicationCount = activeCount
+            session.transferCurrentComplicationUserInfo(["activityData": data])
+            print("[iPhone Sync] sent complication user info (activeCount=\(activeCount))")
         }
 
         lastSyncDate = Date()
@@ -139,7 +160,27 @@ class WatchSyncManager {
         }
     }
 
+    func requestWatchWakeLog() {
+        let userInfo: [String: Any] = ["action": "queryWakeLog"]
+        let session = WCSession.default
+        if session.isReachable {
+            iphoneSyncLog.info("请求 iWatch 全量唤醒日志")
+            session.sendMessage(userInfo, replyHandler: nil) { error in
+                print("[iPhone Sync] queryWakeLog failed: \(error)")
+            }
+        } else {
+            session.transferUserInfo(userInfo)
+        }
+    }
+
     func handleReceivedPayload(_ payload: [String: Any]) {
+        if let data = payload["wakeLog"] as? Data,
+           let entries = try? JSONDecoder().decode([WatchWakeLogEntry].self, from: data) {
+            print("[iPhone Sync] 收到 iWatch 唤醒日志 \(entries.count) 条")
+            iphoneSyncLog.info("收到 iWatch 唤醒日志 \(entries.count, privacy: .public) 条，最新：\(entries.last?.msg ?? "-", privacy: .public)")
+            WakeLogStore.shared.merge(entries)
+            return
+        }
         if let action = payload["action"] as? String, action == "reminderLog" {
             if let data = payload["log"] as? Data,
                let log = try? JSONDecoder().decode(ReminderLogEntry.self, from: data) {
@@ -229,4 +270,48 @@ extension Notification.Name {
     static let activityDataUpdated = Notification.Name("activityDataUpdated")
     static let watchRequestedData = Notification.Name("watchRequestedData")
     static let watchDidBecomeReachable = Notification.Name("watchDidBecomeReachable")
+}
+
+struct WatchWakeLogEntry: Codable, Identifiable {
+    let id: UUID
+    let t: Date
+    let msg: String
+}
+
+@Observable
+final class WakeLogStore {
+    static let shared = WakeLogStore()
+    private(set) var entries: [WatchWakeLogEntry] = []
+    private let lock = NSLock()
+    private static let storeKey = "wakeLogStore"
+
+    private init() {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: Self.storeKey),
+           let saved = try? JSONDecoder().decode([WatchWakeLogEntry].self, from: data) {
+            entries = saved
+        }
+    }
+
+    func merge(_ incoming: [WatchWakeLogEntry]) {
+        lock.lock()
+        defer { lock.unlock() }
+        let known = Set(entries.map(\.id))
+        entries.append(contentsOf: incoming.filter { !known.contains($0.id) })
+        if entries.count > 300 { entries.removeFirst(entries.count - 300) }
+        persistLocked()
+    }
+
+    func clear() {
+        lock.lock()
+        defer { lock.unlock() }
+        entries.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.storeKey)
+    }
+
+    private func persistLocked() {
+        if let data = try? JSONEncoder().encode(entries) {
+            UserDefaults.standard.set(data, forKey: Self.storeKey)
+        }
+    }
 }

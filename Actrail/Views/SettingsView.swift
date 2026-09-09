@@ -93,11 +93,48 @@ struct DebugView: View {
     @State private var showClearConfirm = false
     @State private var showResetConfirm = false
 
+    @State private var wakeLogStore = WakeLogStore.shared
+    private let wakeLogTimer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+
     var body: some View {
         List {
             Section("iWatch 提醒") {
                 Button("测试：手表立即提醒") {
                     viewModel.testReminderOnWatch()
+                }
+            }
+
+            Section("iWatch 系统调度唤醒日志") {
+                Button("刷新") {
+                    viewModel.requestWatchWakeLog()
+                }
+                if wakeLogStore.entries.isEmpty {
+                    Text("暂无日志，等待自动推送或点击刷新")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    let lines = Array(wakeLogStore.entries.reversed().prefix(80))
+                    ForEach(lines) { entry in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text(formatWakeTime(entry.t))
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            Text(entry.msg)
+                                .font(.system(size: 11))
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    Button("清除日志", role: .destructive) {
+                        WakeLogStore.shared.clear()
+                    }
+                }
+                Text("iWatch 端唤醒/拉取/写表盘事件由手表每 2 秒自动推送，这里每 3 秒自动刷新一次（最新在前，最多 300 条）")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .onReceive(wakeLogTimer) { _ in
+                if !WakeLogStore.shared.entries.isEmpty {
+                    viewModel.requestWatchWakeLog()
                 }
             }
 
@@ -464,6 +501,12 @@ struct DebugView: View {
     }
 
     private func formatDiagTime(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f.string(from: date)
+    }
+
+    private func formatWakeTime(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
         return f.string(from: date)

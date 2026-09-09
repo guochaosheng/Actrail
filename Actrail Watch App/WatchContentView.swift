@@ -1,8 +1,12 @@
 import SwiftUI
 import WatchKit
+import os
+
+let contentViewLog = Logger(subsystem: "com.actrail.app", category: "wake")
 
 struct WatchContentView: View {
     @Bindable var viewModel: WatchActivityViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -72,6 +76,13 @@ struct WatchContentView: View {
                     .padding(.horizontal, 26)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                 }
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            contentViewLog.info("系统调度唤醒/前后台切换：scenePhase=\(String(describing: newPhase), privacy: .public)")
+            WatchWakeLog.shared.add("系统调度唤醒/前后台切换 scenePhase=\(String(describing: newPhase))")
+            if newPhase == .active {
+                viewModel.requestDataFromiPhone()
             }
         }
     }

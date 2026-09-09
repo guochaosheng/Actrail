@@ -26,6 +26,7 @@ class WatchActivityViewModel {
     private var reminderCheckTimer: Timer?
     private var reconnectTimer: Timer?
     private var connectingHideTask: Task<Void, Never>?
+    private var fetchRetryTask: Task<Void, Never>?
     private var firedReminderKeys: Set<String> = []
     private var reportedReminderKeys: Set<String> = []
     private let notificationDelegate = WatchNotificationDelegate()
@@ -45,23 +46,47 @@ class WatchActivityViewModel {
         reminderCheckTimer?.invalidate()
         reconnectTimer?.invalidate()
         connectingHideTask?.cancel()
+        fetchRetryTask?.cancel()
     }
 
     private func setupReachabilityObserver() {
         syncManager.onReachabilityChange = { [weak self] reachable in
             Task { @MainActor in
-                self?.isReachable = reachable
+                guard let self else { return }
+                let wasLinked = self.isReachable
+                self.isReachable = reachable
                 if reachable {
-                    self?.requestInitialData()
+                    self.requestInitialData()
+                    // 断连后重连成功：立即开启高频拉取，直到真正拿到一次快照
+                    if !wasLinked {
+                        self.rapidFetchUntilSuccess()
+                    }
                 }
+            }
+        }
+    }
+
+    /// 断连重连成功后每秒持续拉取 iPhone 快照，直到收到一次数据（handleSyncData 会取消），
+    /// 兜底最多持续 15 秒退回常规 2 秒轮询。
+    private func rapidFetchUntilSuccess() {
+        fetchRetryTask?.cancel()
+        fetchRetryTask = Task { [weak self] in
+            var attempts = 0
+            while !Task.isCancelled && attempts < 15 {
+                guard let self else { return }
+                self.syncManager.requestDataFromiPhone()
+                attempts += 1
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
     }
 
     // MARK: - 连接拦截：未连接 iPhone 时任何按钮操作都提示「正在连接中」
 
+    /// 与 UI 圆点同源：用 VM 缓存的 isReachable（由 sessionReachabilityDidChange 回调更新），
+    /// 避免 WCSession.isReachable 瞬时值与界面状态不一致导致"显示未连接却放行操作"。
     private func isPhoneLinked() -> Bool {
-        WCSession.default.activationState == .activated && WCSession.default.isReachable
+        WCSession.default.activationState == .activated && self.isReachable
     }
 
     /// App 打开后持续尝试连接，直到成功；断连后自动继续重连。
@@ -165,8 +190,13 @@ class WatchActivityViewModel {
     }
 
     private func requestInitialData() {
-        syncManager.requestDataFromiPhone()
+        requestDataFromiPhone()
         startPeriodicSync()
+        scheduleBackgroundRefresh()
+    }
+
+    func requestDataFromiPhone() {
+        syncManager.requestDataFromiPhone()
     }
 
     private func startPeriodicSync() {
@@ -176,6 +206,11 @@ class WatchActivityViewModel {
                 self?.syncManager.requestDataFromiPhone()
             }
         }
+    }
+
+    func scheduleBackgroundRefresh() {
+        // watchOS SwiftUI 独立 app 无法使用 WKExtension.scheduleBackgroundRefresh / BGTaskScheduler。
+        // 后台更新由 iPhone 端 transferCurrentComplicationUserInfo 触发（系统唤醒本 app 处理）。
     }
 
     private func startReminderCheck() {
@@ -431,6 +466,8 @@ class WatchActivityViewModel {
     }
 
     private func handleSyncData(_ data: Data) {
+        // 收到一次快照即视为拉取成功，停止断连重连后的高频重试
+        fetchRetryTask?.cancel()
         do {
             let message = try JSONDecoder().decode(WatchSyncManager.SyncMessage.self, from: data)
 
@@ -480,6 +517,7 @@ class WatchActivityViewModel {
             self.completedRecords = iPhoneCompleted
 
             self.activityTypes = types
+            print("[Watch VM] handleSyncData: iPhoneActive=\(iPhoneActive.count), pendingLocal=\(pendingLocal.count), activeCount=\(self.activeRecords.filter(\.isActive).count)")
             self.updateComplicationData()
             let reminders = message.reminders.map { syncReminder in
                 WatchReminder(
@@ -494,6 +532,7 @@ class WatchActivityViewModel {
             }
             // 每次数据到达都重排（幂等），确保打开 App 后按当天/次日滚动续排
             self.rescheduleWatchNotifications()
+            self.scheduleBackgroundRefresh()
         } catch {
             print("[Watch VM] Failed to decode sync data: \(error)")
         }
@@ -521,7 +560,7 @@ class WatchActivityViewModel {
             completedRecords.insert(updatedRecord, at: 0)
 
             updateComplicationData()
-            syncManager.sendActivityStop(recordId: record.id)
+            syncManager.sendActivityStop(recordId: record.id, typeId: record.activityType.id)
         }
     }
 
@@ -570,6 +609,7 @@ class WatchActivityViewModel {
         let shared = UserDefaults(suiteName: AppGroupConstant.suiteName)
         shared?.set(totalMinutes, forKey: AppGroupConstant.todayTotalMinutesKey)
         shared?.set(activeCount, forKey: AppGroupConstant.activeCountKey)
+        print("[Watch VM] updateComplicationData: wrote activeCount=\(activeCount), totalMinutes=\(totalMinutes)")
 
         if let start = activeStart {
             let baseSeconds = totalSeconds - Date().timeIntervalSince(start)

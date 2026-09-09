@@ -223,9 +223,15 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
                 }
             }
         case "stopActivity":
+            // 优先按 recordId：从 iPhone 同步到 watch 的活动，ID 两端一致可直接匹配。
             if let recordIdString = userInfo["recordId"] as? String,
                let recordId = UUID(uuidString: recordIdString),
                let record = activeRecords.first(where: { $0.id == recordId }) {
+                stopActivity(record)
+            } else if let typeIdString = userInfo["typeId"] as? String,
+                      let typeId = UUID(uuidString: typeIdString),
+                      let record = activeRecords.first(where: { $0.activityType?.id == typeId && $0.isActive }) {
+                // watch 本地启动的活动 recordId 不匹配（两端 UUID 不同），按类型停止对应进行中记录。
                 stopActivity(record)
             }
         default:
@@ -672,6 +678,10 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     func requestWatchStatus() {
         watchStatusString = "查询中…"
         syncManager.requestWatchStatus()
+    }
+
+    func requestWatchWakeLog() {
+        syncManager.requestWatchWakeLog()
     }
 
     private func presentWatchStatus(_ status: [String: Any]) {
