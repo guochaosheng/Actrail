@@ -2,6 +2,7 @@ import Foundation
 import WatchConnectivity
 import WatchKit
 import WidgetKit
+import ClockKit
 
 enum AppGroupConstant {
     static let suiteName = "group.com.actrail.app"
@@ -630,6 +631,11 @@ class WatchActivityViewModel {
 
         if activeCount != oldCount || totalMinutes != oldTotal {
             WidgetCenter.shared.reloadAllTimelines()
+            // WatchKit (CLK) 表盘：watch 端本地 start/stop 后立即刷新每个已挂载的 complication
+            let server = CLKComplicationServer.sharedInstance()
+            for complication in server.activeComplications ?? [] {
+                server.reloadTimeline(for: complication)
+            }
         }
     }
 }
