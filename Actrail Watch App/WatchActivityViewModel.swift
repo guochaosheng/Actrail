@@ -607,6 +607,8 @@ class WatchActivityViewModel {
 
         let totalMinutes = Int(totalSeconds) / 60
         let shared = UserDefaults(suiteName: AppGroupConstant.suiteName)
+        let oldCount = shared?.integer(forKey: AppGroupConstant.activeCountKey) ?? -1
+        let oldTotal = shared?.integer(forKey: AppGroupConstant.todayTotalMinutesKey) ?? -1
         shared?.set(totalMinutes, forKey: AppGroupConstant.todayTotalMinutesKey)
         shared?.set(activeCount, forKey: AppGroupConstant.activeCountKey)
         print("[Watch VM] updateComplicationData: wrote activeCount=\(activeCount), totalMinutes=\(totalMinutes)")
@@ -626,7 +628,9 @@ class WatchActivityViewModel {
             shared?.removeObject(forKey: AppGroupConstant.activeActivityNameKey)
         }
 
-        WidgetCenter.shared.reloadAllTimelines()
+        if activeCount != oldCount || totalMinutes != oldTotal {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
 }
 

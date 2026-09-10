@@ -106,6 +106,10 @@ struct ActivityTimelineProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<ActivityEntry>) -> Void) {
         let now = Date()
+        // 观测：记录 provider 每次读取到的 activeCount，供主进程透传后外部验证
+        let seen = sharedActiveCount()
+        UserDefaults(suiteName: AppGroupConstant.suiteName)?.set(seen, forKey: "providerSeenActiveCount")
+        UserDefaults(suiteName: AppGroupConstant.suiteName)?.set(now, forKey: "providerSeenTime")
         if let start = sharedActiveStart() {
             let base = sharedActiveBase()
             let minutes = base + Int(now.timeIntervalSince(start) / 60)

@@ -1,3 +1,4 @@
+import ClockKit
 import Foundation
 import os
 import WidgetKit
@@ -40,8 +41,11 @@ enum WatchAppGroupWriter {
 
         let totalMinutes = Int(totalSeconds) / 60
         let shared = UserDefaults(suiteName: AppGroupConstant.suiteName)
+        let oldCount = shared?.integer(forKey: AppGroupConstant.activeCountKey) ?? -1
+        let oldTotal = shared?.integer(forKey: AppGroupConstant.todayTotalMinutesKey) ?? -1
         shared?.set(totalMinutes, forKey: AppGroupConstant.todayTotalMinutesKey)
         shared?.set(activeCount, forKey: AppGroupConstant.activeCountKey)
+        let changed = activeCount != oldCount || totalMinutes != oldTotal
 
         if let start = activeStart {
             let baseSeconds = totalSeconds - Date().timeIntervalSince(start)
@@ -52,8 +56,31 @@ enum WatchAppGroupWriter {
             shared?.removeObject(forKey: AppGroupConstant.activeBaseMinutesKey)
         }
 
-        WidgetCenter.shared.reloadAllTimelines()
-        watchAppGroupLog.info("写入 AppGroup 完成 activeCount=\(activeCount, privacy: .public) totalMinutes=\(totalMinutes, privacy: .public) 并 reloadAllTimelines")
-        WatchWakeLog.shared.add("写入 AppGroup 完成 activeCount=\(activeCount) totalMinutes=\(totalMinutes) 已 reload 表盘")
+        // 只在数据真正变化时 reload，避免高频轮询烧光 watchOS 的 reload 预算
+        if changed {
+            WidgetCenter.shared.reloadAllTimelines()
+            // WatchKit (CLK) 表盘：立刻刷新每个已挂载的 complication（对标 atimelogger 机制）
+            let server = CLKComplicationServer.sharedInstance()
+            for complication in server.activeComplications ?? [] {
+                server.reloadTimeline(for: complication)
+            }
+        }
+        // 持久化到 watch app 沙盒：便于 devicectl 读取验证后台投递是否真正执行（TCCUI 唤醒不打日志回流）
+        UserDefaults.standard.set(activeCount, forKey: "lastComplicationActiveCount")
+        UserDefaults.standard.set(Date(), forKey: "lastComplicationWriteTime")
+        // 透传 complication provider 实际读到的值，验证表盘渲染数据源是否拿到最新值
+        if let groupUD = shared {
+            UserDefaults.standard.set(groupUD.integer(forKey: "providerSeenActiveCount"), forKey: "providerSeenActiveCount")
+            UserDefaults.standard.set(groupUD.object(forKey: "providerSeenTime") as? Date, forKey: "providerSeenTime")
+            UserDefaults.standard.set(groupUD.integer(forKey: "clkSeenActiveCount"), forKey: "clkSeenActiveCount")
+            UserDefaults.standard.set(groupUD.object(forKey: "clkSeenTime") as? Date, forKey: "clkSeenTime")
+        }
+        watchAppGroupLog.info("写入 AppGroup activeCount=\(activeCount, privacy: .public) totalMinutes=\(totalMinutes, privacy: .public) reloaded=\(changed, privacy: .public)")
+        WatchWakeLog.shared.add("写入 AppGroup activeCount=\(activeCount) totalMinutes=\(totalMinutes) reloaded=\(changed)")
+        // 环形接收日志：最近 20 次（active, 时间），定位表盘数字“回显”来源
+        var applyLog = UserDefaults.standard.array(forKey: "watchApplyLog") as? [[String: Any]] ?? []
+        applyLog.append(["active": activeCount, "total": totalMinutes, "reloaded": changed, "t": Date().timeIntervalSince1970])
+        if applyLog.count > 20 { applyLog.removeFirst(applyLog.count - 20) }
+        UserDefaults.standard.set(applyLog, forKey: "watchApplyLog")
     }
 }

@@ -215,7 +215,14 @@ class WatchSyncManager {
 class DelegateBox: NSObject, WCSessionDelegate, @unchecked Sendable {
     weak var syncManager: WatchSyncManager?
 
+    private func mark(_ source: String) {
+        let ud = UserDefaults.standard
+        ud.set(source, forKey: "lastWakeSource")
+        ud.set(Date(), forKey: "lastWakeTime")
+    }
+
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        mark("activation")
         Task { @MainActor in
             syncManager?.isReachable = session.isReachable
             syncManager?.onReachabilityChange?(session.isReachable)
@@ -225,12 +232,14 @@ class DelegateBox: NSObject, WCSessionDelegate, @unchecked Sendable {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        mark("message")
         watchSyncLog.info("didReceiveMessage 通道收到消息")
         WatchWakeLog.shared.add("didReceiveMessage 通道收到消息")
         syncManager?.handleReceivedPayload(message)
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        mark("message-reply")
         watchSyncLog.info("didReceiveMessage(replyHandler) 通道收到消息")
         WatchWakeLog.shared.add("didReceiveMessage(replyHandler) 通道收到消息")
         syncManager?.handleReceivedPayload(message)
@@ -238,18 +247,21 @@ class DelegateBox: NSObject, WCSessionDelegate, @unchecked Sendable {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        mark("userInfo")
         watchSyncLog.info("didReceiveUserInfo 通道收到数据（含后台唤醒触发）")
         WatchWakeLog.shared.add("didReceiveUserInfo 通道收到数据（含后台唤醒触发）")
         syncManager?.handleReceivedPayload(userInfo)
     }
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        mark("context")
         watchSyncLog.info("didReceiveApplicationContext 通道收到数据")
         WatchWakeLog.shared.add("didReceiveApplicationContext 通道收到数据")
         syncManager?.handleReceivedPayload(applicationContext)
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        mark("reachability")
         Task { @MainActor in
             syncManager?.isReachable = session.isReachable
             syncManager?.onReachabilityChange?(session.isReachable)

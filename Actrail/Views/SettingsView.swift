@@ -104,6 +104,23 @@ struct DebugView: View {
                 }
             }
 
+            Section("表盘同步") {
+                Button("自动测试表盘同步") {
+                    viewModel.runAutoTestSequence()
+                }
+                Text("依次执行：全停 → 开始 1 个 → 全停 → 开始 1 个 → 全停（每步间隔 3 秒），用于观察表盘是否随 iPhone 即时变化。")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("iWatch 连接状态") {
+                Text(viewModel.watchSessionStatus)
+                    .font(.system(size: 11, design: .monospaced))
+                Text("watchApp 已安装 = false 时，iPhone→iWatch 主动推送（sendMessage/表盘通道）会全部失败（WCError 7006），表盘只能等 iWatch app 打开后轮询")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
             Section("iWatch 系统调度唤醒日志") {
                 Button("刷新") {
                     viewModel.requestWatchWakeLog()

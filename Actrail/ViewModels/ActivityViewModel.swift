@@ -64,6 +64,15 @@ class ActivityViewModel {
         setupSyncManager()
         setupNotificationObservers()
 
+        // 调试 hooks：必须在 init 阶段执行（devicectl 后台 launch 不渲染 UI、不触发 onAppear）。
+        // 通道优先用 launch arguments（argv），env 在真机 devicectl 注入不可靠。
+        if self.flag("STOP_ALL_ACTIVE") {
+            stopAllActiveForDebug()
+        }
+        if self.flag("AUTOADD_ACTIVITY") {
+            autoStartActivityForDebug()
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.rebuildCache()
             self?.sendSync()
@@ -72,6 +81,13 @@ class ActivityViewModel {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.isAppReady = true
         }
+    }
+
+    private func flag(_ key: String) -> Bool {
+        // launch arguments: "-ACTRAIL_STOP_ALL_ACTIVE" / "-ACTRAIL_AUTOADD_ACTIVITY"
+        if CommandLine.arguments.contains("-ACTRAIL_\(key)") { return true }
+        if ProcessInfo.processInfo.environment[key] == "1" { return true }
+        return false
     }
 
     private func setupSyncManager() {
@@ -107,12 +123,31 @@ class ActivityViewModel {
                 Task { @MainActor in
                     guard let self, self.modelContext != nil else { return }
                     self.markExpiredPlans()
-                    self.rebuildCache()
-                    self.sendSync()
+                    let changed = self.sendSyncIfChanged()
                     self.extendReminderSchedules()
                 }
             }
         }
+    }
+
+    // 仅当发送快照与上一次实际发送不一致时才调用 sendSync()。
+    // 3 秒轮询改用它，避免每 3 秒无条件轰炸 applicationContext，
+    // 否则 watch 后台队列被无价值消息塞满、真正变化被拖延，且旧消息延迟重放会
+    // 造成表盘“停止后消失又回显”。
+    private var lastSentSignature: String?
+
+    @discardableResult
+    private func sendSyncIfChanged() -> Bool {
+        rebuildCache()
+        let active = cachedActiveRecords
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+            .map { "\($0.id)|\($0.isActive)|\($0.endTime?.timeIntervalSince1970 ?? 0)" }
+            .joined(separator: ":")
+        let signature = "A\(active)C\(cachedCompletedRecords.count)R\(cachedReminders.count)"
+        guard signature != lastSentSignature else { return false }
+        lastSentSignature = signature
+        sendSync()
+        return true
     }
 
     private func setupNotificationObservers() {
@@ -274,6 +309,32 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
                 guard let typeId = record.activityType?.id else { return nil }
                 return (id: record.id, activityTypeId: typeId, startTime: record.startTime, endTime: record.endTime, isActive: record.isActive, note: record.note)
             }
+
+            // 跨日进行中记录（startTime 早于今日 0 点）也必须进缓存，
+            // 否则 cachedActiveRecords 会漏掉它们，表盘「进行中活动数」比真实值偏小。
+            // 同时纳入 activeRecords，使它们在 UI 里可见且可被停止（否则无法从 iPhone 停掉，
+            // 表盘数字会一直 ≥ iPhone 显示的进行中活动）。
+            let activeDescriptor = FetchDescriptor<ActivityRecord>(
+                predicate: #Predicate { $0.isActive },
+                sortBy: [SortDescriptor(\.startTime, order: .reverse)]
+            )
+            if let activeAll = try? context.fetch(activeDescriptor) {
+                for record in activeAll {
+                    if !activeRecords.contains(where: { $0.id == record.id }) {
+                        activeRecords.append(record)
+                    }
+                    if !safeRecordValues.contains(where: { $0.id == record.id }) {
+                        guard let typeId = record.activityType?.id else { continue }
+                        safeRecordValues.append((id: record.id, activityTypeId: typeId, startTime: record.startTime, endTime: record.endTime, isActive: record.isActive, note: record.note))
+                    }
+                }
+                // 观测：当前全部 active 记录数（跨日修复是否生效）
+                UserDefaults.standard.set(activeAll.count, forKey: "DebugActiveAllCount")
+                UserDefaults.standard.set(Date(), forKey: "DebugActiveAllTime")
+            }
+
+            rebuildCache()
+            sendSyncIfChanged()
         } catch {
             print("Failed to fetch today records: \(error)")
         }
@@ -343,6 +404,8 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             sendSync()
         } catch {
             print("Failed to save activity record: \(error)")
+            // 观测：stop 保存失败（真机验证跨日 active 停止时 save 是否报错）
+            UserDefaults.standard.set("\(error)", forKey: "DebugStopSaveError")
         }
     }
 
@@ -682,6 +745,53 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
 
     func requestWatchWakeLog() {
         syncManager.requestWatchWakeLog()
+    }
+
+    var watchSessionStatus: String {
+        syncManager.sessionDebugStatus
+    }
+
+    /// 调试用：devicectl launch 时设置环境变量 AUTOADD_ACTIVITY=1，
+    /// app 启动后自动开始"第一个未在进行中"的活动类型，
+    /// 用于自动化验证 iPhone→iWatch 表盘链路（触发进行中活动数变化）。
+    func autoStartActivityForDebug() {
+        guard let first = activityTypes.first(where: { type in
+            !activeRecords.contains(where: { $0.activityType?.id == type.id && $0.isActive })
+        }) else {
+            print("[AUTOADD] 所有活动类型均在进行中")
+            return
+        }
+        startActivity(first)
+        print("[AUTOADD] 已自动开始 \(first.name)")
+    }
+
+    /// 调试用：devicectl launch 时设置环境变量 STOP_ALL_ACTIVE=1，
+    /// 停止所有进行中活动（activeCount 归零），配合 AUTOADD 做 0→1 归零验证。
+    func stopAllActiveForDebug() {
+        let running = activeRecords.filter(\.isActive)
+        for record in running {
+            stopActivity(record)
+        }
+        // 观测：STOP_ALL 查到/停了几条（用于真机验证跨日 active 是否可停止）
+        let ud = UserDefaults.standard
+        ud.set(running.count, forKey: "DebugStopFound")
+        ud.set(Date(), forKey: "DebugStopTime")
+        print("[AUTOSTOP] 已停止 \(running.count) 个进行中活动")
+    }
+
+    /// 调试用：串行执行“全停→开始→全停→开始→全停”，一键观察表盘是否跟随 iPhone 变化。
+    func runAutoTestSequence() {
+        Task { @MainActor in
+            stopAllActiveForDebug()
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            autoStartActivityForDebug()
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            stopAllActiveForDebug()
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            autoStartActivityForDebug()
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            stopAllActiveForDebug()
+        }
     }
 
     private func presentWatchStatus(_ status: [String: Any]) {

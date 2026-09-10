@@ -13,6 +13,11 @@ class WatchSyncManager {
     var lastSyncDate: Date?
     fileprivate var lastActivityData: Data?
 
+    var sessionDebugStatus: String {
+        let s = WCSession.default
+        return "激活=\(s.activationState.rawValue) 已配对=\(s.isPaired) watchApp已安装=\(s.isWatchAppInstalled) 表盘已启用=\(s.isComplicationEnabled) reachable=\(s.isReachable)"
+    }
+
     var onActivityUpdate: (([SyncedActivityType], [SyncedActivityRecord]) -> Void)?
     var onReachabilityChange: ((Bool) -> Void)?
     var onReminderLogReceived: ((ReminderLogEntry) -> Void)?
@@ -88,15 +93,29 @@ class WatchSyncManager {
 
         lastActivityData = data
 
+        let activeCount = activeRecords.filter(\.isActive).count
+
+        // 发送观测埋点：写 iPhone 沙盒，便于 devicectl 读取确认 iPhone 实际发送的内容
+        let defaults = UserDefaults.standard
+        defaults.set(activeCount, forKey: "iPhoneSentActiveCount")
+        defaults.set(Date(), forKey: "iPhoneSentTime")
+        defaults.set(session.activationState.rawValue, forKey: "iPhoneSentActivationState")
+        defaults.set(activeCount != lastComplicationCount ? 1 : 0, forKey: "iPhoneSentComplicationDelta")
+        // 环形发送日志：最近 20 次（active, 时间），定位“停止后回显”的来源
+        var sendLog = defaults.array(forKey: "iPhoneSendLog") as? [[String: Any]] ?? []
+        sendLog.append(["active": activeCount, "t": Date().timeIntervalSince1970, "started": activeRecords.count])
+        if sendLog.count > 20 { sendLog.removeFirst(sendLog.count - 20) }
+        defaults.set(sendLog, forKey: "iPhoneSendLog")
+
         print("[iPhone Sync] sendActivityUpdate: active=\(activeRecords.filter(\.isActive).count), completed=\(completedRecords.count), activated=\(session.activationState == .activated)")
 
         if session.activationState == .activated {
             session.sendMessage(userInfo, replyHandler: nil) { error in
-                print("[iPhone Sync] sendMessage failed: \(error)，改用 transferUserInfo 兜底")
-                WCSession.default.transferUserInfo(userInfo)
+                print("[iPhone Sync] sendMessage failed: \(error)，applicationContext 已兜底最新快照")
             }
-            // applicationContext 兜底：即使 watch app 未运行也保留最新快照，
+            // applicationContext 兜底：即使 watch app 未运行也保留最新快照；
             // watch 端 didReceiveApplicationContext 收到后会立即更新 AppGroup 与 widget。
+            // 不做 transferUserInfo：失败时排队旧快照会造成表盘数据滞后。
             try? session.updateApplicationContext(userInfo)
             print("[iPhone Sync] applicationContext updated")
         } else {
@@ -106,9 +125,9 @@ class WatchSyncManager {
         // 表盘专用通道：仅在进行中活动数变化时发送。
         // transferCurrentComplicationUserInfo 是 iOS→watchOS 官方机制：
         // 即使 watch app 未运行，watch 系统也会后台启动它处理并刷新表盘。
-        let activeCount = activeRecords.filter(\.isActive).count
         if session.activationState == .activated, activeCount != lastComplicationCount {
             lastComplicationCount = activeCount
+            UserDefaults.standard.set(1, forKey: "iPhoneSentComplicationUserInfo")
             session.transferCurrentComplicationUserInfo(["activityData": data])
             print("[iPhone Sync] sent complication user info (activeCount=\(activeCount))")
         }
@@ -220,6 +239,7 @@ class DelegateBox: NSObject, WCSessionDelegate {
             syncManager?.onReachabilityChange?(session.isReachable)
         }
         print("[iPhone Sync] WCSession activated: state=\(activationState.rawValue), reachable=\(session.isReachable)")
+        print("[iPhone Sync] install=\(session.isWatchAppInstalled) complication=\(session.isComplicationEnabled) paired=\(session.isPaired)")
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {

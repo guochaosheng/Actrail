@@ -43,6 +43,19 @@ struct ActrailApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: viewModel)
+                .onOpenURL { url in
+                    // 调试通道：actrail://debug?stop=1 或 actrail://debug?add=1
+                    UserDefaults.standard.set(url.absoluteString, forKey: "DebugLastURL")
+                    UserDefaults.standard.set(Date(), forKey: "DebugLastURLTime")
+                    guard url.scheme == "actrail", url.host == "debug" else { return }
+                    let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                    if items.contains(where: { $0.name == "stop" }) {
+                        viewModel.stopAllActiveForDebug()
+                    }
+                    if items.contains(where: { $0.name == "add" }) {
+                        viewModel.autoStartActivityForDebug()
+                    }
+                }
                 .onAppear {
                     syncManager.startSession()
                     viewModel.setupReminderNotifications()
