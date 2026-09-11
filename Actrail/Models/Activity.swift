@@ -145,10 +145,12 @@ enum CodingKeys: String, CodingKey {
     var scheduledDatesString: String {
         guard !scheduledDates.isEmpty else { return "尚未排定" }
         let calendar = Calendar.current
+        let suffix = alarmEnabled && alarmGraceMinutes > 0 ? "（+\(alarmGraceMinutes)分钟）" : ""
         let parts = scheduledDates.map { d -> String in
-            if calendar.isDateInToday(d) { return "今天 \(Self.scheduleDateFormatter.string(from: d))" }
-            if calendar.isDateInTomorrow(d) { return "明天 \(Self.scheduleDateFormatter.string(from: d))" }
-            return Self.scheduleDateFormatter.string(from: d)
+            let time = Self.scheduleDateFormatter.string(from: d)
+            if calendar.isDateInToday(d) { return "今天 \(time)\(suffix)" }
+            if calendar.isDateInTomorrow(d) { return "明天 \(time)\(suffix)" }
+            return "\(time)\(suffix)"
         }
         return "已排定：\(parts.joined(separator: "、"))"
     }

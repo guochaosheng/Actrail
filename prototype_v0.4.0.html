@@ -1,0 +1,1535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>行迹 - 原型图 v0.4.0</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --blue: #007AFF; --green: #34C759; --orange: #FF9500; --pink: #FF2D55;
+  --indigo: #5856D6; --purple: #AF52DE; --red: #FF3B30; --yellow: #FFCC00;
+  --gray: #8E8E93; --bg: #F2F2F7; --card-bg: #FFFFFF; --separator: #C6C6C8;
+  --text-primary: #000000; --text-secondary: rgba(60,60,67,0.6);
+  --safe-bottom: env(safe-area-inset-bottom, 0px); --tab-height: 49px;
+}
+html, body {
+  font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  background: var(--bg); color: var(--text-primary);
+  height: 100%; overflow: hidden; -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input { font-family: inherit; }
+
+.phone-frame {
+  position: relative; width: 100%; height: 100%;
+  max-width: 430px; margin: 0 auto; background: var(--bg); overflow: hidden;
+}
+@media (min-width: 500px) {
+  body { display: flex; align-items: center; justify-content: center; background: #1a1a1a; }
+  .phone-frame {
+    width: 393px; height: 852px; border-radius: 47px;
+    border: 3px solid #333; box-shadow: 0 0 60px rgba(0,0,0,0.5);
+    margin: 0; overflow: hidden;
+  }
+}
+
+/* ===== 修改说明侧栏（仅宽屏展示，不进入手机画面）===== */
+.changelog { display: none; }
+@media (min-width: 1200px) {
+  body { justify-content: center; padding-left: 400px; }
+  .changelog {
+    display: block; position: fixed; top: 0; left: 0; bottom: 0;
+    width: 380px; padding: 28px 24px; overflow-y: auto;
+    background: #202124; color: #e8eaed;
+    font-size: 13px; line-height: 1.7; z-index: 2000;
+  }
+  .changelog h2 { font-size: 18px; margin-bottom: 4px; color: #fff; }
+  .changelog .chip {
+    display: inline-block; font-size: 11px; color: #8ab4f8;
+    background: rgba(138,180,248,0.12); border: 1px solid rgba(138,180,248,0.35);
+    border-radius: 12px; padding: 1px 10px; margin-right: 6px;
+  }
+  .changelog .sub { font-size: 12px; color: #9aa0a6; margin: 8px 0 20px; }
+  .changelog .section { font-size: 13px; font-weight: 600; color: #8ab4f8; margin: 18px 0 6px; }
+  .changelog ul { margin: 0; padding-left: 18px; }
+  .changelog li { margin-bottom: 8px; }
+  .changelog li b { color: #fff; font-weight: 600; }
+  .changelog li s { color: #9aa0a6; }
+  .changelog .old { color: #f28b82; text-decoration: line-through; }
+  .changelog .new { color: #81c995; }
+}
+
+.tab-content { display: none; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.tab-content.active { display: block; }
+.tab-content.with-bottom-bar { padding-bottom: calc(var(--tab-height) + var(--safe-bottom)); }
+
+.nav-bar {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(242,242,247,0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  padding: 12px 16px 8px; border-bottom: 0.5px solid var(--separator);
+}
+.nav-bar-title { font-size: 17px; font-weight: 600; }
+
+.toolbar { display: flex; justify-content: flex-end; padding: 8px 16px 0; }
+
+.tab-bar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 430px; height: var(--tab-height);
+  background: rgba(249,249,249,0.94); backdrop-filter: blur(20px);
+  border-top: 0.5px solid var(--separator);
+  display: flex; align-items: center; justify-content: space-around;
+  z-index: 1000;
+}
+.tab-item {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 4px 0; min-width: 64px; color: var(--gray);
+}
+.tab-item.active { color: var(--blue); }
+.tab-item svg { width: 24px; height: 24px; }
+.tab-item span { font-size: 10px; font-weight: 500; }
+
+/* Section header — SwiftUI .headline secondary */
+.section-header {
+  font-size: 17px; font-weight: 600; color: rgba(60,60,67,0.6);
+  padding: 20px 16px 8px;
+}
+.section-header:first-child { padding-top: 8px; }
+
+/* Home title row */
+.home-title-row {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 4px 16px 0;
+}
+.home-title { font-size: 28px; font-weight: 700; }
+
+/* Card */
+.card {
+  background: var(--card-bg); border-radius: 12px;
+  box-shadow: 0 0.5px 0 rgba(0,0,0,0.04); overflow: hidden;
+}
+
+/* Active activity card */
+.active-card {
+  background: var(--card-bg); border-radius: 16px; padding: 16px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 16px 8px;
+}
+.active-icon {
+  width: 50px; height: 50px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.active-icon svg { width: 26px; height: 26px; }
+.active-info { flex: 1; min-width: 0; }
+.active-name { font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+.active-time { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.active-stop {
+  width: 50px; height: 50px; border-radius: 50%;
+  background: rgba(255,59,48,0.2); color: var(--red);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.active-stop svg { width: 22px; height: 22px; }
+
+/* Activity grid */
+.activity-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 0 16px; }
+.activity-btn { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0; position: relative; }
+.activity-btn-circle {
+  width: 60px; height: 60px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.activity-btn-circle svg { width: 28px; height: 28px; }
+.activity-btn-label { font-size: 13px; color: var(--text-primary); }
+.activity-item { position: relative; display: flex; flex-direction: column; align-items: center; }
+.activity-delete {
+  position: absolute; top: 0; left: 50%; transform: translateX(-70px);
+  width: 22px; height: 22px; border-radius: 50%; border: none;
+  background: #FF3B30; color: #fff; font-size: 18px; font-weight: 700; line-height: 1;
+  display: none; align-items: center; justify-content: center; cursor: pointer;
+  box-shadow: 0 2px 6px rgba(255,59,48,0.4);
+}
+.activity-item.edit-mode .activity-delete { display: flex; }
+
+/* Alarm card — iOS Alarm 风格 */
+.alarm-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 20px 0;
+}
+.alarm-edit-btn {
+  font-size: 17px; font-weight: 400; color: #FF9500; background: none;
+  border: none; cursor: pointer; padding: 8px 16px; border-radius: 20px;
+  background: rgba(255,149,0,0.12);
+}
+.alarm-add-btn {
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: rgba(255,149,0,0.12); color: #FF9500; font-size: 24px; font-weight: 300;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.alarm-title {
+  font-size: 34px; font-weight: 700; padding: 8px 20px 12px;
+}
+.alarm-card {
+  background: var(--card-bg); border-radius: 16px; padding: 18px 20px 14px;
+  margin: 0 16px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.alarm-card-info { flex: 1; min-width: 0; }
+.alarm-time {
+  font-size: 48px; font-weight: 200; letter-spacing: -1px;
+  font-variant-numeric: tabular-nums; line-height: 1.1; color: var(--text-primary);
+}
+.alarm-card-meta {
+  display: flex; align-items: center; gap: 4px; margin-top: 6px;
+  font-size: 14px; color: var(--text-secondary);
+}
+.alarm-card-meta svg { width: 14px; height: 14px; }
+.alarm-card-toggle { flex-shrink: 0; margin-top: 12px; }
+.alarm-delete {
+  width: 28px; height: 28px; border-radius: 50%; background: #FF3B30;
+  color: #fff; display: none; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 14px; cursor: pointer;
+}
+.alarm-delete svg { width: 14px; height: 14px; }
+.alarm-delete.show { display: flex; }
+
+/* Toggle */
+.toggle {
+  position: relative; width: 51px; height: 31px; margin-left: 8px;
+  background: #E9E9EA; border-radius: 16px; transition: background 0.2s; cursor: pointer; flex-shrink: 0;
+}
+.toggle.on { background: var(--green); }
+.toggle-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 27px; height: 27px; border-radius: 50%;
+  background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: transform 0.2s;
+}
+.toggle.on .toggle-knob { transform: translateX(20px); }
+
+/* Calendar */
+.calendar-picker {
+  padding: 12px 16px 16px; background: var(--card-bg);
+  margin: 0 16px 12px; border-radius: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.calendar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 4px 14px; font-size: 17px; font-weight: 600;
+}
+.calendar-nav { color: var(--blue); font-size: 22px; padding: 4px 8px; background: none; border: none; cursor: pointer; }
+.calendar-weekdays {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  text-align: center; font-size: 13px; color: var(--gray); font-weight: 500; margin-bottom: 8px;
+}
+.calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 15px; }
+.calendar-day {
+  padding: 8px 0; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; margin: 0 auto;
+}
+.calendar-day:hover { background: #E5E5EA; }
+.calendar-day.today { color: var(--blue); font-weight: 600; }
+.calendar-day.selected { background: var(--blue); color: white; font-weight: 600; }
+.calendar-day.other-month { color: #C7C7CC; }
+
+/* Record row */
+.record-row {
+  display: flex; align-items: center; padding: 4px 16px;
+  background: var(--card-bg); gap: 10px; min-height: 52px; position: relative;
+}
+.record-row + .record-row::before {
+  content: ''; position: absolute; top: 0; left: 56px; right: 16px; height: 0.5px;
+  background: var(--separator);
+}
+.record-icon {
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.record-icon svg { width: 18px; height: 18px; }
+.record-info { flex: 1; min-width: 0; }
+.record-name { font-size: 16px; font-weight: 500; }
+.record-time { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.record-duration { font-size: 15px; color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.record-active-badge { font-size: 13px; color: var(--green); }
+
+/* Statistics */
+.period-picker {
+  display: flex; margin: 0 16px 12px;
+  background: #E5E5EA; border-radius: 10px; padding: 2px;
+}
+.period-btn {
+  flex: 1; text-align: center; padding: 8px 0; font-size: 13px; font-weight: 600;
+  border-radius: 8px; color: #636366; transition: all 0.2s; cursor: pointer;
+}
+.period-btn.active { background: white; color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+/* 统计页内分段：日历(历史) ↔ 趋势(图表)，零文字两图标切换 */
+.sub-switch {
+  display: flex; margin: 4px auto 12px; width: fit-content;
+  background: #E5E5EA; border-radius: 10px; padding: 2px; gap: 2px;
+}
+.sub-switch-btn {
+  width: 48px; height: 32px; border-radius: 8px; color: #636366; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+}
+.sub-switch-btn.active { background: #fff; color: var(--blue); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.sub-switch-btn svg { width: 18px; height: 18px; }
+
+/* 添加提醒 Sheet：表单行 */
+.alarm-form-card {
+  background: var(--card-bg); border-radius: 12px; margin: 0 16px; overflow: hidden;
+}
+.alarm-form-row {
+  display: flex; align-items: center; padding: 14px 16px; position: relative;
+}
+.alarm-form-row + .alarm-form-row::before {
+  content: ''; position: absolute; left: 16px; right: 16px; top: 0; height: 0.5px;
+  background: var(--separator);
+}
+.alarm-form-label { font-size: 16px; flex: 1; }
+.alarm-form-value { font-size: 16px; color: var(--text-secondary); margin-right: 4px; }
+.alarm-form-row svg { width: 8px; height: 13px; color: #C7C7CC; flex-shrink: 0; }
+
+.summary-card {
+  background: var(--card-bg); border-radius: 16px; padding: 20px; margin: 0 16px 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 16px;
+}
+.summary-label { font-size: 14px; color: var(--text-secondary); font-weight: 500; }
+.summary-value { font-size: 28px; font-weight: 700; margin: 4px 0; letter-spacing: -0.5px; }
+.summary-change { font-size: 13px; color: var(--green); font-weight: 500; }
+.summary-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: rgba(0,122,255,0.15); color: var(--blue);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: auto;
+}
+.summary-icon svg { width: 28px; height: 28px; }
+
+.chart-card {
+  background: var(--card-bg); border-radius: 16px; padding: 20px; margin: 0 16px 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.chart-title { font-size: 17px; font-weight: 600; margin-bottom: 14px; }
+.chart-bar {
+  height: 12px; border-radius: 6px; overflow: hidden; display: flex; margin-bottom: 14px;
+}
+.chart-segment { transition: width 0.4s; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 14px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+.ranking-row { display: flex; align-items: center; padding: 12px 0; gap: 12px; }
+.ranking-row + .ranking-row { border-top: 0.5px solid var(--separator); }
+.ranking-name { width: 60px; font-size: 15px; font-weight: 500; flex-shrink: 0; text-align: left; }
+.ranking-bar-bg { flex: 1; height: 8px; background: #E5E5EA; border-radius: 4px; overflow: hidden; }
+.ranking-bar { height: 100%; border-radius: 4px; transition: width 0.4s; }
+.ranking-duration { width: 60px; text-align: right; font-size: 12px; color: var(--text-secondary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+/* Settings — plain iOS grouped list */
+.settings-group { margin: 0 16px 24px; }
+.settings-card { background: var(--card-bg); border-radius: 12px; overflow: hidden; }
+.settings-row {
+  display: flex; align-items: center; padding: 11px 16px;
+  min-height: 44px; position: relative; font-size: 17px;
+}
+.settings-row + .settings-row::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px;
+  background: var(--separator);
+}
+.settings-row-label { flex: 1; }
+.settings-row-trailing { color: #C7C7CC; display: flex; align-items: center; gap: 4px; }
+.settings-row-value { color: var(--text-secondary); }
+
+/* Sheet */
+.sheet-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4); z-index: 2000;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.sheet-overlay.show { opacity: 1; pointer-events: all; }
+.sheet {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 430px; max-height: 92vh;
+  background: var(--bg); border-radius: 16px 16px 0 0;
+  z-index: 2001; overflow: hidden; display: flex; flex-direction: column;
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  transform: translateX(-50%) translateY(100%);
+}
+.sheet.show { transform: translateX(-50%) translateY(0); }
+.sheet-handle { width: 36px; height: 5px; border-radius: 3px; background: #C7C7CC; margin: 8px auto 0; }
+.sheet-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; font-size: 17px; font-weight: 600;
+}
+.sheet-content { overflow-y: auto; flex: 1; padding-bottom: 40px; }
+.sheet-close { font-size: 17px; color: #FF9500; font-weight: 400; background: rgba(255,149,0,0.12); border: none; cursor: pointer; padding: 8px 16px; border-radius: 20px; }
+.sheet-save { font-size: 17px; color: #FF9500; font-weight: 600; background: rgba(255,149,0,0.12); border: none; cursor: pointer; padding: 8px 16px; border-radius: 20px; }
+
+/* Form */
+.form-group { background: var(--card-bg); border-radius: 12px; margin: 12px 16px; overflow: hidden; }
+.form-row {
+  display: flex; align-items: center; padding: 11px 16px;
+  min-height: 44px; position: relative;
+}
+.form-row + .form-row::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px;
+  background: var(--separator);
+}
+.form-label { font-size: 17px; min-width: 90px; }
+.form-input {
+  flex: 1; border: none; outline: none; font-size: 17px; text-align: right; background: transparent;
+}
+.form-text { font-size: 17px; color: var(--text-secondary); }
+.form-section-title {
+  font-size: 13px; color: var(--gray); text-transform: uppercase;
+  padding: 20px 16px 8px; letter-spacing: 0.08px;
+}
+.form-help { font-size: 13px; color: var(--gray); padding: 8px 16px; line-height: 1.4; }
+.form-btn-full {
+  margin: 16px; padding: 14px; border-radius: 12px;
+  background: var(--blue); color: white; font-size: 17px; font-weight: 600;
+  text-align: center; width: calc(100% - 32px);
+}
+
+/* Wheel picker：无箭头，可上下拖动 / 鼠标滚轮 / 点击上下行，模拟 iOS 滚轮 */
+.wheel-picker { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 16px; }
+.wheel-mask {
+  position: relative; width: 70px; height: 108px; overflow: hidden;
+  touch-action: none; cursor: ns-resize; user-select: none; -webkit-user-select: none;
+}
+.wheel-mask::before, .wheel-mask::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 36px; z-index: 2; pointer-events: none;
+}
+.wheel-mask::before { top: 0; background: linear-gradient(to bottom, #fff, rgba(255,255,255,0)); }
+.wheel-mask::after { bottom: 0; background: linear-gradient(to top, #fff, rgba(255,255,255,0)); }
+.wheel-inner { transition: transform .18s ease; will-change: transform; }
+.wheel-cell {
+  height: 36px; line-height: 36px; text-align: center; font-size: 20px; font-weight: 500;
+  color: rgba(60,60,67,0.55); font-variant-numeric: tabular-nums;
+}
+.wheel-cell.cur { color: #000; font-weight: 700; background: #E5E5EA; border-radius: 9px; margin: 0 8px; }
+.wheel-colon { font-size: 26px; font-weight: 600; padding: 0 4px; }
+
+/* Icon grid */
+.icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 16px; }
+.icon-pick {
+  width: 50px; height: 50px; border-radius: 50%;
+  background: #F2F2F7; display: flex; align-items: center; justify-content: center;
+  margin: 0 auto; cursor: pointer; transition: all 0.15s;
+}
+.icon-pick svg { width: 24px; height: 24px; color: var(--gray); }
+.icon-pick.selected { background: rgba(0,122,255,0.2); }
+.icon-pick.selected svg { color: var(--blue); }
+
+/* Color grid */
+.color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 16px; }
+.color-pick {
+  width: 40px; height: 40px; border-radius: 50%;
+  margin: 0 auto; cursor: pointer; transition: all 0.15s; border: 3px solid transparent;
+}
+.color-pick.selected { border-color: var(--text-primary); }
+
+/* History / kind detail */
+.history-group-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 16px; background: var(--card-bg);
+}
+.history-group-label { font-size: 15px; font-weight: 600; flex: 1; }
+.kind-row {
+  display: flex; align-items: center; padding: 10px 16px 10px 46px;
+  background: var(--card-bg); gap: 8px; position: relative; cursor: pointer;
+}
+.kind-row + .kind-row::before {
+  content: ''; position: absolute; top: 0; left: 46px; right: 0; height: 0.5px;
+  background: var(--separator);
+}
+.kind-icon { color: var(--blue); width: 22px; flex-shrink: 0; display: flex; align-items: center; }
+.kind-icon svg { width: 18px; height: 18px; }
+.kind-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 500; }
+.kind-trailing { font-size: 13px; color: var(--text-secondary); text-align: right; white-space: nowrap; }
+
+::-webkit-scrollbar { display: none; }
+.empty-state { text-align: center; padding: 40px 16px; color: var(--gray); font-size: 15px; }
+
+/* ===== UX 重构：图形引导（零文字），用颜色/形状/动画传递因果 ===== */
+.watch-conn-icon { width: 13px; height: 13px; color: var(--text-secondary); }
+
+/* 空态：虚线占位 + 跳动图标 + 扩散涟漪 —— 示意"这里会被填满 / 这里可以开始"，不写一个字 */
+.empty-dashed {
+  margin: 0 16px; border: 1.5px dashed #C7C7CC; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center; padding: 26px 0;
+  position: relative; overflow: hidden;
+}
+.empty-dashed.lite { margin-top: 8px; padding: 20px 0; }
+.empty-dashed svg { width: 40px; height: 40px; color: #B0B0B6; }
+.empty-ring {
+  position: absolute; border-radius: 50%;
+  border: 2px solid rgba(0,122,255,0.3);
+  animation: ringExpand 2.2s ease-out infinite;
+}
+.empty-ring.r2 { animation-delay: 1.1s; }
+@keyframes ringExpand {
+  0% { width: 24px; height: 24px; opacity: 0.85; }
+  100% { width: 130px; height: 130px; opacity: 0; }
+}
+.pulse-soft { animation: pulseSoft 1.6s ease-in-out infinite; }
+@keyframes pulseSoft { 0%,100% { opacity: .4; transform: scale(1); } 50% { opacity: .9; transform: scale(1.06); } }
+
+.badge-plus {
+  position: absolute; top: 4px; right: 10px; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--blue); color: #fff; font-size: 15px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  animation: pulseSoft 1.6s ease-in-out infinite;
+}
+
+/* 活动卡进出场：点按→卡片出现的因果反馈 */
+.active-card { animation: cardIn .32s cubic-bezier(.2,.9,.3,1.15); }
+@keyframes cardIn { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+.cardOut { animation: cardOut .22s ease forwards; }
+@keyframes cardOut { to { opacity: 0; transform: translateY(-6px) scale(.97); } }
+
+/* 活动网格：轻微呼吸 + 点按回弹，暗示可点 */
+.activity-btn .activity-btn-circle {
+  transition: transform .16s ease;
+}
+.activity-item:not(.edit-mode) .activity-btn-circle {
+  animation: gridBreath 3.2s ease-in-out infinite;
+  animation-delay: var(--bd, 0s);
+}
+.activity-btn:active .activity-btn-circle { transform: scale(.86); }
+@keyframes gridBreath { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+
+.history-day-summary {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 0 16px 12px; padding: 14px 16px; border-radius: 16px; background: var(--card-bg);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  font-size: 13px; color: var(--text-secondary);
+}
+.history-day-summary b { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+
+.demo-btn {
+  display: inline-block; font-size: 12px; color: var(--blue); padding: 5px 12px; border-radius: 10px;
+  background: rgba(0,122,255,0.12); margin: 0 6px 8px 0; cursor: pointer;
+}
+.demo-btn.on { background: var(--blue); color: #fff; }
+.demo-note { font-size: 12px; color: #9aa0a6; margin: 4px 0 12px; }
+</style>
+</head>
+<body>
+
+<div class="changelog" id="changelog">
+  <h2>行迹 · 原型图 v0.4.0</h2>
+  <div><span class="chip">信息架构重排</span><span class="chip">4 Tab 保留</span></div>
+  <div class="sub">基准：v0.3.0 归档后原位演进</div>
+
+  <div class="section">本次结构变化（按评估结论落地）<span class="new">NEW</span></div>
+  <ul>
+    <li><b class="new">首页瘦身</b>：「记录提醒 / 提醒历史」移出，只剩 正在进行 + 记录活动</li>
+    <li><b class="new">统计 并入 历史</b>：原「历史」页签合并进「统计」，页内日历↔趋势分段切换</li>
+    <li><b class="new">新增「提醒」页签</b>：iOS 闹钟风格（大标题"提醒"、编辑/添加按钮、白色卡片）</li>
+    <li><b class="new">投递历史内联化</b>：每条提醒下挂投递记录，点行展开</li>
+  </ul>
+
+  <div class="section">活动页签调整<span class="new">NEW</span></div>
+  <ul>
+    <li><b class="new">顶部编辑/+按钮</b>：替换原 2×2 网格图标，与提醒页签风格统一</li>
+    <li><b class="new">编辑模式</b>：点击「编辑」→ 活动图标左侧显示红色「−」删除按钮，「编辑」变「完成」</li>
+    <li><b class="new">添加活动类型</b>：点击「+」从底部滑出 Sheet（名称/分组/图标/颜色），取消旧 manageTypes 中转页</li>
+    <li><b class="new">移除连接指示灯</b>：标题行去掉绿色 conn-dot 和 iWatch 文案</li>
+    <li><b class="new">移除铃铛徽标</b>：标题行去掉提醒角标，简化首页</li>
+    <li><b class="new">标题字号调大</b>：「行迹」从 22px → 28px，视觉层级更清晰</li>
+  </ul>
+
+  <div class="section">统计页签重构<span class="new">NEW</span></div>
+  <ul>
+    <li><b class="new">消除双层顶部</b>：移除小号 nav-bar，改用大号 alarm-title「统计」</li>
+    <li><b class="new">iOS 健康风格</b>：卡片 16px 圆角 + 轻阴影，条形图 12px 细条，字号/间距统一优化</li>
+  </ul>
+
+  <div class="section">提醒页签调整<span class="new">NEW</span></div>
+  <ul>
+    <li><b class="new">"闹钟"→"提醒"</b>：全局标题/卡片/表单/种子数据统一更名为「提醒」</li>
+    <li><b class="new">添加提醒仅支持时间</b>：移除日期分段选择器和星期网格，只保留时间滚轮</li>
+    <li><b class="new">移除重复/铃声</b>：添加提醒 Sheet 去掉「重复」「铃声」配置行</li>
+    <li><b class="new">新增稍后提醒</b>：支持开关 → 开启后显示「提醒类型：闹钟」+「提醒时长：5 分钟」</li>
+    <li><b class="new">卡片 meta 更新</b>：显示「标签 · 稍后提醒 X分钟」替代原「标签 · 永不」</li>
+    <li><b class="new">取消/保存按钮</b>：改为橙色药丸样式，与编辑按钮统一</li>
+    <li><b class="new">铃铛徽标直达</b>：首页点击铃铛直接滑出添加提醒 Sheet（非跳转 tab）</li>
+  </ul>
+
+  <div class="section">图形引导（延续 v0.3.0）</div>
+  <ul>
+    <li><b>空槽 = 虚线框 + 跳动图标 + 扩散涟漪</b>：暗示「这里可以开始 / 会被填满」</li>
+    <li><b>点按因果</b>：图标缩放回弹 → 彩色卡片飞入顶部并实时计时</li>
+    <li><b>颜色即状态</b>：进行中卡片用活动色实底；停止按钮为红色脉动方块</li>
+    <li><b>全部移除</b>：toast 文案、活动下方提示、sheet 说明段落、新手引导弹层</li>
+  </ul>
+
+  <div class="section">数据对齐</div>
+  <ul>
+    <li>真实科目「睡眠」替代虚构「休息」；时长 H:MM:SS / MM:SS 补零</li>
+    <li>短 ID #大写8位；提醒日志用真实命名</li>
+  </ul>
+
+  <div class="section">原型演示控制（只影响手机画面）</div>
+  <div class="demo-note">切换手机画面的数据状态，方便检查两种形态</div>
+  <button class="demo-btn on" id="mode-sample-btn" onclick="setDataMode('sample')">示例数据</button>
+  <button class="demo-btn" id="mode-empty-btn" onclick="setDataMode('empty')">空状态</button>
+</div>
+
+<div class="phone-frame" id="app">
+  <!-- ===== Tab 1: Home ===== -->
+  <div class="tab-content with-bottom-bar active" id="tab-home">
+    <div class="alarm-header">
+      <button class="alarm-edit-btn" id="activity-edit-btn" onclick="toggleActivityEditMode()">编辑</button>
+      <button class="alarm-add-btn" onclick="openSheet('addType')">+</button>
+    </div>
+
+    <div class="home-title-row">
+      <span class="home-title">行迹</span>
+    </div>
+
+    <div id="active-section-wrap">
+      <div class="section-header">正在进行</div>
+      <div id="active-section"></div>
+    </div>
+
+    <div class="section-header">记录活动</div>
+    <div class="activity-grid" id="activity-grid"></div>
+
+    <div style="height:80px;"></div>
+  </div>
+
+  <!-- ===== Tab 2: 统计（日曆历史 ↔ 趋势图表，页内分段） ===== -->
+  <div class="tab-content with-bottom-bar" id="tab-stats">
+    <h1 class="alarm-title">统计</h1>
+    <div class="sub-switch">
+      <button class="sub-switch-btn" data-sv="day" onclick="switchStatsView('day',this)" aria-label="每日历史">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 3v4M16 3v4"/></svg>
+      </button>
+      <button class="sub-switch-btn active" data-sv="trend" onclick="switchStatsView('trend',this)" aria-label="趋势统计">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 019 9h-9V3z" fill="currentColor" stroke="none"/><path d="M12 12l5-3" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div id="stats-day" style="display:none;">
+      <div style="padding-top:4px;">
+        <div class="calendar-picker">
+          <div class="calendar-header">
+            <button class="calendar-nav" onclick="shiftMonth(-1)">&lsaquo;</button>
+            <span id="calendar-month">2026年9月</span>
+            <button class="calendar-nav" onclick="shiftMonth(1)">&rsaquo;</button>
+          </div>
+          <div class="calendar-weekdays">
+            <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+          </div>
+          <div class="calendar-days" id="calendar-days"></div>
+        </div>
+      </div>
+      <div class="history-day-summary" id="history-day-summary"></div>
+      <div id="history-records" style="margin-top:8px;"></div>
+    </div>
+
+    <div id="stats-trend">
+      <div style="padding-top:8px;">
+        <div class="period-picker">
+          <div class="period-btn active" onclick="switchPeriod(this)">今日</div>
+          <div class="period-btn" onclick="switchPeriod(this)">本周</div>
+          <div class="period-btn" onclick="switchPeriod(this)">本月</div>
+        </div>
+        <div id="stats-empty" style="display:none;"></div>
+        <div id="stats-content">
+        <div class="summary-card">
+          <div>
+            <div class="summary-label">总时长</div>
+            <div class="summary-value" id="stats-total">8:30:00</div>
+            <div class="summary-change" id="stats-change">比昨天多2小时</div>
+          </div>
+          <div class="summary-icon">
+            <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">活动分布</div>
+          <div class="chart-bar" id="stats-chart-bar">
+            <div class="chart-segment" style="width:50%;background:var(--blue);"></div>
+            <div class="chart-segment" style="width:30%;background:var(--green);"></div>
+            <div class="chart-segment" style="width:20%;background:var(--orange);"></div>
+          </div>
+          <div class="chart-legend" id="stats-legend">
+            <div class="legend-item"><div class="legend-dot" style="background:var(--blue);"></div>工作 50%</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--green);"></div>运动 30%</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--orange);"></div>阅读 20%</div>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">活动排行</div>
+          <div id="ranking-list"></div>
+        </div>
+        </div>
+      </div>
+    </div>
+    <div style="height:80px;"></div>
+  </div>
+
+  <!-- ===== Tab 3: 提醒（iOS 闹钟风格） ===== -->
+  <div class="tab-content with-bottom-bar" id="tab-reminders">
+    <div class="alarm-header">
+      <button class="alarm-edit-btn" id="alarm-edit-btn" onclick="toggleEditMode()">编辑</button>
+      <button class="alarm-add-btn" onclick="openSheet('addReminder')">+</button>
+    </div>
+    <h1 class="alarm-title">提醒</h1>
+    <div id="reminder-list"></div>
+    <div style="height:80px;"></div>
+  </div>
+
+  <!-- ===== Tab 4: Settings ===== -->
+  <div class="tab-content with-bottom-bar" id="tab-settings">
+    <div class="nav-bar">
+      <div class="nav-bar-title">设置</div>
+    </div>
+    <div style="padding-top:12px;">
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-label">启用通知</div>
+            <div class="toggle on" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">触觉反馈</div>
+            <div class="toggle on" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">自动备份</div>
+            <div class="toggle" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">调试</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">主题颜色</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">深色模式</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">导出数据</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">导入数据</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">清除数据</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-label">版本</div>
+            <div class="settings-row-value">1.0.0</div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">使用条款</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">隐私政策</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">帮助中心</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">联系我们</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">给个好评</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div style="height:80px;"></div>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-item active" data-tab="home" onclick="switchTab('home')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42A8.962 8.962 0 0012 4c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>
+      <span>活动</span>
+    </button>
+    <button class="tab-item" data-tab="stats" onclick="switchTab('stats')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 2v20c-5.07-.5-9-4.79-9-10s3.93-9.5 9-10zm2 0v9h9c-.47-4.73-4.24-8.5-9-9zm0 11v9c4.75-.5 8.53-4.27 9-9h-9z"/></svg>
+      <span>统计</span>
+    </button>
+    <button class="tab-item" data-tab="reminders" onclick="switchTab('reminders')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+      <span>提醒</span>
+    </button>
+    <button class="tab-item" data-tab="settings" onclick="switchTab('settings')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
+      <span>设置</span>
+    </button>
+  </div>
+
+  <!-- Sheet overlay -->
+  <div class="sheet-overlay" id="sheet-overlay" onclick="closeAllSheets()"></div>
+
+  <!-- Add Reminder Sheet -->
+  <div class="sheet" id="sheet-addReminder">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <button class="sheet-close" onclick="closeAllSheets()">取消</button>
+      <span>添加提醒</span>
+      <button class="sheet-save" onclick="saveReminder()">保存</button>
+    </div>
+    <div class="sheet-content">
+      <div id="alarm-time-view">
+        <div class="wheel-picker">
+          <div class="wheel-mask" id="mask-hour" data-key="hour">
+            <div class="wheel-inner">
+              <div class="wheel-cell"></div>
+              <div class="wheel-cell"></div>
+              <div class="wheel-cell cur" id="wheel-hour">08</div>
+              <div class="wheel-cell"></div>
+              <div class="wheel-cell"></div>
+            </div>
+          </div>
+          <span class="wheel-colon">:</span>
+          <div class="wheel-mask" id="mask-min" data-key="min">
+            <div class="wheel-inner">
+              <div class="wheel-cell"></div>
+              <div class="wheel-cell"></div>
+              <div class="wheel-cell cur" id="wheel-min">00</div>
+              <div class="wheel-cell"></div>
+              <div class="wheel-cell"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="alarm-form-card">
+        <div class="alarm-form-row">
+          <span class="alarm-form-label">标签</span>
+          <span class="alarm-form-value" id="alarm-label">提醒</span>
+        </div>
+      </div>
+      <div class="alarm-form-card" style="margin-top:12px;">
+        <div class="alarm-form-row">
+          <span class="alarm-form-label">稍后提醒</span>
+          <div class="toggle" id="snooze-toggle" onclick="toggleSnooze(this)">
+            <div class="toggle-knob"></div>
+          </div>
+        </div>
+        <div class="alarm-form-row snooze-detail" style="display:none;">
+          <span class="alarm-form-label">提醒类型</span>
+          <span class="alarm-form-value">闹钟</span>
+        </div>
+        <div class="alarm-form-row snooze-detail" style="display:none;">
+          <span class="alarm-form-label">提醒时长</span>
+          <span class="alarm-form-value" id="snooze-duration">5 分钟</span>
+          <svg viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage Types Sheet -->
+  <!-- Add Activity Type Sheet -->
+  <div class="sheet" id="sheet-addType">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <button class="sheet-close" onclick="closeAllSheets()">取消</button>
+      <span>添加活动类型</span>
+      <button class="sheet-save" onclick="closeAllSheets()">保存</button>
+    </div>
+    <div class="sheet-content">
+      <div class="form-section-title">基本信息</div>
+      <div class="form-group">
+        <div class="form-row">
+          <div class="form-label">活动名称</div>
+          <input class="form-input" placeholder="输入名称">
+        </div>
+        <div class="form-row">
+          <div class="form-label">分组</div>
+          <input class="form-input" placeholder="默认">
+        </div>
+      </div>
+      <div class="form-section-title">选择图标</div>
+      <div class="form-group" style="padding:4px;">
+        <div class="icon-grid" id="icon-picker-grid"></div>
+      </div>
+      <div class="form-section-title">选择颜色</div>
+      <div class="form-group" style="padding:4px;">
+        <div class="color-grid" id="color-picker-grid"></div>
+      </div>
+      <div class="form-btn-full" onclick="closeAllSheets()">保存</div>
+    </div>
+  </div>
+
+  <!-- Kind Detail Sheet -->
+  <div class="sheet" id="sheet-kindDetail">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <button class="sheet-close" onclick="closeAllSheets()">关闭</button>
+      <span id="kind-detail-title">提醒详情</span>
+      <span></span>
+    </div>
+    <div class="sheet-content" id="kind-detail-content"></div>
+  </div>
+</div>
+
+<script>
+// ===== 真实种子数据（与 ActivityViewModel.insertSampleData 一致） =====
+const activityTypes = [
+  { id: 1, name: '工作', icon: 'briefcase', color: '#007AFF', group: '工作' },
+  { id: 2, name: '运动', icon: 'run', color: '#34C759', group: '健康' },
+  { id: 3, name: '阅读', icon: 'book', color: '#FF9500', group: '学习' },
+  { id: 4, name: '睡眠', icon: 'moon', color: '#5856D6', group: '健康' },
+  { id: 5, name: '用餐', icon: 'fork', color: '#FF2D55', group: '生活' },
+  { id: 6, name: '通勤', icon: 'car', color: '#8E8E93', group: '生活' },
+];
+
+// 与 ReminderRow/ReminderLogKind 源码一致的显示格式
+const reminderKinds = {
+  phone: { title: 'iPhone 计划', icon: 'iphone' },
+  watch: { title: 'iWatch 计划', icon: 'applewatch' },
+  alarm: { title: '闹钟计划', icon: 'alarm' },
+  other: { title: '其它事件', icon: 'doc' },
+};
+
+const iconSVGs = {
+  briefcase: '<path d="M20 7h-4V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-6 0h-4V5h4v2z"/>',
+  run: '<path d="M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3A7.02 7.02 0 0018.39 13v-2c-2.15 0-3.96-1.12-5.01-2.78l-1.08-1.71c-.38-.6-1.05-.99-1.79-.99-.24 0-.47.04-.69.1L4.53 8.43v5.07h2V9.56l1.81-.73-1.14 5.07-3.25-1.43-.66 1.43 3.54 1.57z"/>',
+  book: '<path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/>',
+  moon: '<path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>',
+  fork: '<path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/>',
+  car: '<path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>',
+  iphone: '<path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>',
+  applewatch: '<path d="M15.5 1h-8A2.5 2.5 0 005 3.5v17A2.5 2.5 0 007.5 23h8a2.5 2.5 0 002.5-2.5v-17A2.5 2.5 0 0015.5 1zm-4 21c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5-4H7V4h9v14z"/>',
+  alarm: '<path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>',
+  doc: '<path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>',
+};
+
+// 未来日期计算（滚动 3 天）
+function dayAt(offset, h, m) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+function fmtDateTime(d) {
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
+// scheduledDatesString：已排定：今天 09/10 08:00（+5分钟）、明天 ...
+function scheduledDatesString(h, m, alarmEnabled, grace) {
+  if (!alarmEnabled) return '尚未排定';
+  const suffix = grace > 0 ? `（+${grace}分钟）` : '';
+  const parts = [0, 1, 2].map(off => {
+    const d = dayAt(off, h, m);
+    const t = fmtDateTime(d);
+    if (off === 0) return `今天 ${t}${suffix}`;
+    if (off === 1) return `明天 ${t}${suffix}`;
+    return `${t}${suffix}`;
+  });
+  return `已排定：${parts.join('、')}`;
+}
+
+// ===== 预览数据 =====
+let sampleData = {
+  activeRecords: [
+    { type: activityTypes[0], startTime: Date.now() - 3723000 },
+    { type: activityTypes[1], startTime: Date.now() - 1560000 },
+  ],
+  reminders: [
+    { id: 1, time: '08:00', hour: 8, minute: 0, shortID: 'A3F1C2D9', enabled: true, alarmEnabled: true, alarmGraceMinutes: 5, scheduledDates: '已排定：今天 09/10 08:00（+5分钟）、明天 09/11 08:00（+5分钟）、09/12 08:00（+5分钟）', label: '提醒', snooze: true, snoozeType: '闹钟', snoozeMinutes: 5 },
+    { id: 2, time: '22:30', hour: 22, minute: 30, shortID: 'B7E2A415', enabled: false, alarmEnabled: false, alarmGraceMinutes: 5, scheduledDates: '尚未排定', label: '提醒', snooze: false, snoozeType: null, snoozeMinutes: null },
+  ],
+  historyRecords: [
+    { type: activityTypes[0], name: '工作', startTime: '09:00', duration: '2:30:00', durSec: 9000, active: false, day: 10 },
+    { type: activityTypes[1], name: '运动', startTime: '12:00', duration: '45:00', durSec: 2700, active: false, day: 10 },
+    { type: activityTypes[2], name: '阅读', startTime: '14:00', duration: '1:15:00', durSec: 4500, active: false, day: 10 },
+    { type: activityTypes[3], name: '睡眠', startTime: '16:00', duration: null, durSec: 0, active: true, day: 10 },
+    { type: activityTypes[5], name: '通勤', startTime: '18:00', duration: '30:00', durSec: 1800, active: false, day: 9 },
+  ],
+  historyGroups: [
+    { displayID: 'A3F1C2D9', reminderLabel: '每天 08:00', kinds: [
+      { kind: 'phone', slots: 3, count: 3 },
+      { kind: 'watch', slots: 3, count: 3 },
+      { kind: 'alarm', slots: 3, count: 3, status: '成功' },
+    ]},
+    { displayID: 'B7E2A415', reminderLabel: '每天 22:30', kinds: [
+      { kind: 'phone', slots: 2, count: 2 },
+      { kind: 'alarm', slots: 1, count: 2, status: '失败' },
+    ]},
+  ],
+};
+
+// 当前可变状态
+let dataMode = 'sample';
+let activeRecords = [];
+let reminders = [];
+let historyRecords = [];
+let historyGroups = [];
+
+function copySample() {
+  activeRecords = sampleData.activeRecords.map(r => ({ ...r }));
+  reminders = sampleData.reminders.map(r => ({ ...r }));
+  historyRecords = sampleData.historyRecords.map(r => ({ ...r }));
+  historyGroups = sampleData.historyGroups.map(g => ({ ...g, kinds: g.kinds.map(k => ({ ...k })) }));
+}
+function clearData() {
+  activeRecords = [];
+  reminders = [];
+  historyRecords = [];
+  historyGroups = [];
+}
+function setDataMode(mode) {
+  dataMode = mode;
+  document.getElementById('mode-sample-btn').classList.toggle('on', mode === 'sample');
+  document.getElementById('mode-empty-btn').classList.toggle('on', mode === 'empty');
+  if (mode === 'sample') copySample(); else clearData();
+  renderAll();
+  renderStats();
+}
+
+// ===== 排版切换 =====
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  const item = document.querySelector('.tab-item[data-tab="' + tab + '"]');
+  if (item) item.classList.add('active');
+}
+
+// 连接状态切换（原型演示用；真实 App 中为只读状态）
+let connected = true;
+function toggleConnection() {
+  connected = !connected;
+}
+
+// ===== 时长格式化（与 SwiftUI formatDuration 一致）=====
+function formatActiveDuration(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+// ===== 首页渲染 =====
+function renderActiveCards() {
+  const wrap = document.getElementById('active-section-wrap');
+  wrap.style.display = '';
+  const el = document.getElementById('active-section');
+  if (activeRecords.length === 0) {
+    el.innerHTML = `<div class="empty-dashed">
+      <span class="empty-ring"></span><span class="empty-ring r2"></span>
+      <svg viewBox="0 0 24 24" fill="currentColor" class="pulse-soft"><path d="M12 2a10 10 0 100 20 10 10 0 010-20zm0 4a6 6 0 100 12 6 6 0 010-12z"/></svg>
+    </div>`;
+    return;
+  }
+  el.innerHTML = activeRecords.map((r, i) => `
+    <div class="active-card">
+      <div class="active-icon" style="background:${r.type.color}20;color:${r.type.color};">
+        <svg fill="currentColor" viewBox="0 0 24 24">${iconSVGs[r.type.icon]}</svg>
+      </div>
+      <div class="active-info">
+        <div class="active-name">${r.type.name}</div>
+        <div class="active-time" data-start="${r.startTime}">${formatActiveDuration(Date.now() - r.startTime)}</div>
+      </div>
+      <button class="active-stop" onclick="stopActivity(${i})" aria-label="停止记录">
+        <svg fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      </button>
+    </div>
+  `).join('');
+}
+function stopActivity(idx) {
+  const r = activeRecords[idx];
+  if (!r) return;
+  const card = document.querySelectorAll('#active-section .active-card')[idx];
+  if (card) card.classList.add('cardOut');
+  setTimeout(() => {
+    activeRecords.splice(idx, 1);
+    const dur = Date.now() - r.startTime;
+    historyRecords.unshift({
+      type: r.type,
+      name: r.type.name,
+      startTime: fmtTime(new Date(r.startTime)),
+      duration: formatActiveDuration(dur),
+      durSec: Math.floor(dur / 1000),
+      active: false,
+      day: selectedDay,
+    });
+    renderActiveCards();
+    renderHistoryRecords();
+  }, 220);
+}
+function fmtTime(d) {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function renderActivityGrid() {
+  const el = document.getElementById('activity-grid');
+  el.innerHTML = activityTypes.map((t, i) => `
+    <div class="activity-item${activityEditMode ? ' edit-mode' : ''}" data-id="${t.id}">
+      <button class="activity-delete" onclick="deleteActivityType(${t.id})">−</button>
+      <button class="activity-btn" onclick="${activityEditMode ? '' : 'startActivity(' + t.id + ')'}">
+        <div class="activity-btn-circle" style="background:${t.color}20;color:${t.color};--bd:${(i % 6) * 0.4}s;">
+          <svg fill="currentColor" viewBox="0 0 24 24">${iconSVGs[t.icon]}</svg>
+        </div>
+        <div class="activity-btn-label">${t.name}</div>
+      </button>
+    </div>
+  `).join('');
+}
+let activityEditMode = false;
+function toggleActivityEditMode() {
+  activityEditMode = !activityEditMode;
+  document.getElementById('activity-edit-btn').textContent = activityEditMode ? '完成' : '编辑';
+  renderActivityGrid();
+}
+function deleteActivityType(id) {
+  if (!activityEditMode) return;
+  activityTypes = activityTypes.filter(t => t.id !== id);
+  renderActivityGrid();
+}
+function startActivity(id) {
+  const t = activityTypes.find(a => a.id === id);
+  if (!t || activeRecords.find(r => r.type.id === id)) return;
+  activeRecords.push({ type: t, startTime: Date.now() });
+  renderActiveCards();
+}
+
+// 统计页内分段：day(日曆历史) ↔ trend(趋势图表)
+function switchStatsView(view, el) {
+  document.getElementById('stats-day').style.display = view === 'day' ? '' : 'none';
+  document.getElementById('stats-trend').style.display = view === 'trend' ? '' : 'none';
+  document.querySelectorAll('.sub-switch-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  if (view === 'day') { renderCalendar(); renderHistoryRecords(); }
+}
+
+function renderReminders() {
+  const el = document.getElementById('reminder-list');
+  if (reminders.length === 0) {
+    el.innerHTML = `<div class="empty-dashed" style="cursor:pointer;" onclick="openSheet('addReminder')">
+      <span class="badge-plus">+</span>
+      <span class="empty-ring"></span><span class="empty-ring r2"></span>
+      <svg viewBox="0 0 24 24" fill="currentColor" class="pulse-soft"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+    </div>`;
+    return;
+  }
+  el.innerHTML = reminders.map(r => `
+    <div class="alarm-card" id="alarm-${r.id}">
+      <div class="alarm-delete" onclick="deleteReminder(${r.id})">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      </div>
+      <div class="alarm-card-info">
+        <div class="alarm-time">${r.time}</div>
+        <div class="alarm-card-meta">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+          <span>${r.label || '提醒'}${r.snooze ? ' · 稍后提醒 ' + r.snoozeMinutes + '分钟' : ''}</span>
+        </div>
+      </div>
+      <div class="alarm-card-toggle">
+        <div class="toggle ${r.enabled ? 'on' : ''}" onclick="this.classList.toggle('on')">
+          <div class="toggle-knob"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  if (alarmEditMode) {
+    document.querySelectorAll('.alarm-delete').forEach(d => d.classList.add('show'));
+  }
+}
+function openKindDetail(id) {
+  document.getElementById('kind-detail-title').textContent = '提醒详情';
+  openSheet('kindDetail');
+}
+
+// ===== 历史记录 =====
+let calYear = 2026, calMonth = 8, selectedDay = 10;
+function renderCalendar() {
+  const el = document.getElementById('calendar-days');
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const daysInPrev = new Date(calYear, calMonth, 0).getDate();
+  document.getElementById('calendar-month').textContent = `${calYear}年${calMonth + 1}月`;
+  let html = '';
+  for (let i = firstDay - 1; i >= 0; i--) html += `<div class="calendar-day other-month">${daysInPrev - i}</div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const c = [];
+    if (d === 10 && calYear === 2026 && calMonth === 8) c.push('today');
+    if (d === 10) c.push('selected');
+    html += `<div class="calendar-day ${c.join(' ')}" onclick="selectDay(${d})">${d}</div>`;
+  }
+  const total = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  for (let d = 1; d <= total - firstDay - daysInMonth; d++) html += `<div class="calendar-day other-month">${d}</div>`;
+  el.innerHTML = html;
+}
+function shiftMonth(delta) {
+  calMonth += delta;
+  if (calMonth < 0) { calMonth = 11; calYear--; }
+  if (calMonth > 11) { calMonth = 0; calYear++; }
+  renderCalendar();
+}
+function selectDay(d) {
+  selectedDay = d;
+  document.querySelectorAll('.calendar-day').forEach(x => x.classList.remove('selected'));
+  document.querySelectorAll('.calendar-day:not(.other-month)').forEach(x => {
+    if (x.textContent == d) x.classList.add('selected');
+  });
+  renderHistoryRecords();
+}
+
+function renderHistoryRecords() {
+  const el = document.getElementById('history-records');
+  const summary = document.getElementById('history-day-summary');
+  if (historyRecords.length === 0) {
+    summary.style.display = 'none';
+    el.innerHTML = `<div class="empty-dashed lite">
+      <span class="empty-ring"></span><span class="empty-ring r2"></span>
+      <svg viewBox="0 0 24 24" fill="currentColor" class="pulse-soft"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"/></svg>
+    </div>`;
+    return;
+  }
+  const dayRecords = historyRecords.filter(r => r.day === selectedDay);
+  summary.style.display = 'flex';
+  const totalSec = dayRecords.reduce((s, r) => s + (r.durSec || 0), 0);
+  summary.innerHTML = `<span>${calYear}年${calMonth + 1}月${selectedDay}日</span><b>${dayRecords.length} 项记录</b><span style="flex:1;"></span><span>合计 ${fmtSec(totalSec)}</span>`;
+  if (dayRecords.length === 0) {
+    el.innerHTML = `<div class="empty-dashed lite">
+      <span class="empty-ring"></span><span class="empty-ring r2"></span>
+      <svg viewBox="0 0 24 24" fill="currentColor" class="pulse-soft"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"/></svg>
+    </div>`;
+    return;
+  }
+  el.innerHTML = '<div class="card">' + dayRecords.map(r => `
+    <div class="record-row">
+      <div class="record-icon" style="background:${r.type.color}20;color:${r.type.color};">
+        <svg fill="currentColor" viewBox="0 0 24 24">${iconSVGs[r.type.icon]}</svg>
+      </div>
+      <div class="record-info">
+        <div class="record-name">${r.name}</div>
+        <div class="record-time">${r.active ? '正在进行' : r.startTime + ' 开始'}</div>
+      </div>
+      ${r.active ? '<span class="record-active-badge">进行中</span>' : `<span class="record-duration">${r.duration}</span>`}
+    </div>
+  `).join('') + '</div>';
+}
+function fmtSec(totalSec) {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// ===== 统计 =====
+function renderStats() {
+  const emptyBox = document.getElementById('stats-empty');
+  const content = document.getElementById('stats-content');
+  if (dataMode === 'empty') {
+    emptyBox.style.display = '';
+    emptyBox.innerHTML = `<div class="empty-dashed">
+      <span class="empty-ring"></span><span class="empty-ring r2"></span>
+      <svg viewBox="0 0 24 24" fill="currentColor" class="pulse-soft"><path d="M11 2v20c-5.07-.5-9-4.79-9-10s3.93-9.5 9-10zm2 0v9h9c-.47-4.73-4.24-8.5-9-9zm0 11v9c4.75-.5 8.53-4.27 9-9h-9z"/></svg>
+    </div>`;
+    content.style.display = 'none';
+    return;
+  }
+  emptyBox.style.display = 'none';
+  content.style.display = '';
+  const acc = {};
+  historyRecords.filter(r => r.active === false && r.durSec).forEach(r => {
+    acc[r.type.name] = acc[r.type.name] || { name: r.type.name, durSec: 0, color: r.type.color };
+    acc[r.type.name].durSec += r.durSec;
+  });
+  const ranked = Object.values(acc).sort((a, b) => b.durSec - a.durSec);
+  const total = ranked.reduce((s, a) => s + a.durSec, 0);
+  document.getElementById('stats-total').textContent = fmtSec(total);
+  const top = ranked[0];
+  document.getElementById('stats-change').textContent = top ? `「${top.name}」用时最多 · ${fmtSec(top.durSec)}` : '暂无对比';
+  document.getElementById('stats-legend').innerHTML = ranked.slice(0, 3).map(a => `
+    <div class="legend-item"><div class="legend-dot" style="background:${a.color};"></div>${a.name} ${total ? Math.round(a.durSec / total * 100) : 0}%</div>`
+  ).join('');
+  document.getElementById('stats-chart-bar').innerHTML = ranked.slice(0, 3).map(a => `
+    <div class="chart-segment" style="width:${total ? Math.round(a.durSec / total * 100) : 0}%;background:${a.color};"></div>`
+  ).join('');
+  document.getElementById('ranking-list').innerHTML = ranked.map(a => `
+    <div class="ranking-row">
+      <div class="ranking-name">${a.name}</div>
+      <div class="ranking-bar-bg"><div class="ranking-bar" style="width:${total ? Math.round(a.durSec / total * 100) : 0}%;background:${a.color};"></div></div>
+      <div class="ranking-duration">${fmtSec(a.durSec)}</div>
+    </div>`).join('') || `<div class="empty-dashed lite">
+      <svg viewBox="0 0 24 24" fill="currentColor" class="pulse-soft"><path d="M11 2v20c-5.07-.5-9-4.79-9-10s3.93-9.5 9-10zm2 0v9h9c-.47-4.73-4.24-8.5-9-9zm0 11v9c4.75-.5 8.53-4.27 9-9h-9z"/></svg>
+    </div>`;
+}
+function switchPeriod(el) {
+  el.parentElement.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ===== 类型管理 =====
+function renderManageTypes() {
+  const el = document.getElementById('manage-type-list');
+  el.innerHTML = '<div class="card" style="margin:8px 16px;">' + activityTypes.map(t => `
+    <div class="settings-row">
+      <svg width="30" height="30" fill="${t.color}" viewBox="0 0 24 24" style="flex-shrink:0;margin-right:12px;">${iconSVGs[t.icon]}</svg>
+      <div class="settings-row-label">${t.name}</div>
+      <div class="settings-row-trailing">
+        <span style="font-size:13px;color:var(--text-secondary);margin-right:4px;">${t.group}</span>
+        <svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </div>
+    </div>
+  `).join('') + '</div>';
+}
+
+// ===== 图标/颜色选择器 =====
+function renderIconPicker() {
+  const icons = [
+    ['star.fill','<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>'],
+    ['heart.fill','<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>'],
+    ['book.fill','<path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/>'],
+    ['figure.run','<path d="M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3A7.02 7.02 0 0018.39 13v-2c-2.15 0-3.96-1.12-5.01-2.78l-1.08-1.71c-.38-.6-1.05-.99-1.79-.99-.24 0-.47.04-.69.1L4.53 8.43v5.07h2V9.56l1.81-.73-1.14 5.07-3.25-1.43-.66 1.43 3.54 1.57z"/>'],
+    ['briefcase.fill','<path d="M20 7h-4V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-6 0h-4V5h4v2z"/>'],
+    ['moon.fill','<path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>'],
+    ['sun.min.fill','<path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1z"/>'],
+    ['cloud.fill','<path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>'],
+    ['music.note','<path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>'],
+    ['gamecontroller.fill','<path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 3c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm4-3c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>'],
+    ['cart.fill','<path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49A1.003 1.003 0 0020 4H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/>'],
+    ['house.fill','<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>'],
+    ['car.fill','<path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>'],
+    ['airplane','<path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>'],
+    ['bicycle','<path d="M15.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM5 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5zm5.8-10l2.4-2.4.8.8c1.3 1.3 3 2.1 5 2.1v-2c-1.4 0-2.5-.5-3.4-1.4L13.4 5.5c-.4-.4-.9-.5-1.4-.5s-1 .2-1.4.5L7.8 8.4c-.4.4-.6.9-.6 1.4 0 .6.2 1.1.6 1.4L11 14v5h2v-6.2l-2.2-2.3zM19 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z"/>'],
+    ['figure.walk','<path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7z"/>'],
+  ];
+  const el = document.getElementById('icon-picker-grid');
+  el.innerHTML = icons.map(([name, path], i) => `
+    <div class="icon-pick ${i === 0 ? 'selected' : ''}" onclick="selectIcon(this)">
+      <svg viewBox="0 0 24 24" fill="${i === 0 ? 'var(--blue)' : 'var(--gray)'}">${path}</svg>
+    </div>
+  `).join('');
+}
+function selectIcon(el) {
+  el.parentElement.querySelectorAll('.icon-pick').forEach(e => {
+    e.classList.remove('selected');
+    e.querySelector('svg').setAttribute('fill', 'var(--gray)');
+  });
+  el.classList.add('selected');
+  el.querySelector('svg').setAttribute('fill', 'var(--blue)');
+}
+function renderColorPicker() {
+  const colors = ['#007AFF','#34C759','#FF9500','#FF2D55','#5856D6','#AF52DE','#FF3B30','#FFCC00'];
+  const el = document.getElementById('color-picker-grid');
+  el.innerHTML = colors.map((c, i) => `
+    <div class="color-pick ${i === 0 ? 'selected' : ''}" style="background:${c};" onclick="selectColor(this)"></div>
+  `).join('');
+}
+function selectColor(el) {
+  el.parentElement.querySelectorAll('.color-pick').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+// ===== Sheet =====
+function openSheet(name) {
+  document.getElementById('sheet-overlay').classList.add('show');
+  document.getElementById('sheet-' + name).classList.add('show');
+}
+function closeAllSheets() {
+  document.getElementById('sheet-overlay').classList.remove('show');
+  document.querySelectorAll('.sheet').forEach(s => s.classList.remove('show'));
+}
+function applyHash() {
+  location.hash.slice(1).split('&').forEach(kv => {
+    const parts = kv.split('='); const k = parts[0], v = parts.slice(1).join('=');
+    if (!k) return;
+    if (k === 'sheet') openSheet(v);
+    else if (k === 'mode') setDataMode(v);
+    else if (k === 'tab') switchTab(v);
+    else if (k === 'rhid') { /* removed: inline history no longer used */ }
+    else if (k === 'sv') switchStatsView(v, document.querySelector('.sub-switch-btn[data-sv="' + v + '"]'));
+  });
+}
+// ===== 滚轮选择器：拖动 / 鼠标滚轮 / 点按上下行，模拟 iOS 滚轮（无箭头无文字）=====
+const wheelData = {
+  hour: { max: 23, list: null, pending: 0, animating: false },
+  min:  { max: 59, list: null, pending: 0, animating: false },
+};
+for (const key in wheelData) {
+  const m = wheelData[key].max + 1;
+  const base = key === 'hour' ? 8 : 0;
+  wheelData[key].list = [base - 2, base - 1, base, base + 1, base + 2].map(v => ((v % m) + m) % m);
+}
+function centerWheelVal(key) { return wheelData[key].list[2]; }
+function renderWheel(key) {
+  const st = wheelData[key];
+  const inner = document.getElementById('mask-' + key).querySelector('.wheel-inner');
+  inner.style.transition = 'none';
+  inner.querySelectorAll('.wheel-cell').forEach((c, i) => {
+    c.textContent = String(st.list[i]).padStart(2, '0');
+    c.classList.toggle('cur', i === 2);
+  });
+  inner.style.transform = 'translateY(-36px)';
+  requestAnimationFrame(() => { inner.style.transition = 'transform .18s ease'; });
+}
+function wheelStep(key, delta) {
+  const st = wheelData[key];
+  st.pending += delta;
+  if (!st.animating) wheelTween(key);
+}
+function wheelTween(key) {
+  const st = wheelData[key];
+  if (!st.pending) return;
+  st.animating = true;
+  const dir = st.pending > 0 ? 1 : -1;
+  st.pending -= dir;
+  const inner = document.getElementById('mask-' + key).querySelector('.wheel-inner');
+  inner.style.transition = 'transform .18s ease';
+  inner.style.transform = 'translateY(' + (-36 - dir * 36) + 'px)';
+  setTimeout(() => {
+    const m = st.max + 1;
+    const list = st.list.slice();
+    if (dir > 0) { list.shift(); list.push(((list[list.length - 1] + 1) % m + m) % m); }
+    else { list.pop(); list.unshift(((list[0] - 1) % m + m) % m); }
+    st.list = list;
+    renderWheel(key);
+    st.animating = false;
+    wheelTween(key);
+  }, 185);
+}
+document.querySelectorAll('.wheel-mask').forEach(mask => {
+  const key = mask.dataset.key;
+  let dragging = false, startY = 0, acc = 0, moved = 0;
+  mask.addEventListener('pointerdown', e => {
+    dragging = true; startY = e.clientY; acc = 0; moved = 0;
+    mask.setPointerCapture(e.pointerId);
+  });
+  mask.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    acc += e.clientY - startY; startY = e.clientY;
+    moved += Math.abs(e.movementY);
+    const step = Math.round(acc / 24);
+    if (step) { wheelStep(key, -step); acc -= step * 24; }
+  });
+  mask.addEventListener('pointerup', e => {
+    dragging = false;
+    if (moved < 6) {
+      const rect = mask.getBoundingClientRect();
+      wheelStep(key, (e.clientY - rect.top) < rect.height / 2 ? 1 : -1);
+    }
+  });
+  mask.addEventListener('wheel', e => { e.preventDefault(); wheelStep(key, e.deltaY < 0 ? 1 : -1); }, { passive: false });
+});
+renderWheel('hour'); renderWheel('min');
+function toggleAlarmOptions(toggle) {
+  document.getElementById('alarm-options').style.display = toggle.classList.contains('on') ? 'block' : 'none';
+}
+
+let alarmEditMode = false;
+function toggleEditMode() {
+  alarmEditMode = !alarmEditMode;
+  document.getElementById('alarm-edit-btn').textContent = alarmEditMode ? '完成' : '编辑';
+  document.querySelectorAll('.alarm-delete').forEach(d => d.classList.toggle('show', alarmEditMode));
+}
+function deleteReminder(id) {
+  reminders = reminders.filter(r => r.id !== id);
+  renderReminders();
+}
+function toggleSnooze(el) {
+  el.classList.toggle('on');
+  const show = el.classList.contains('on');
+  document.querySelectorAll('.snooze-detail').forEach(r => r.style.display = show ? '' : 'none');
+}
+
+function saveReminder() {
+  const hh = document.getElementById('wheel-hour').textContent;
+  const mm = document.getElementById('wheel-min').textContent;
+  const shortID = Math.random().toString(16).slice(2, 10).toUpperCase();
+  const snoozeOn = document.getElementById('snooze-toggle')?.classList.contains('on') || false;
+  const r = {
+    id: Date.now(),
+    time: `${hh}:${mm}`,
+    hour: +hh, minute: +mm,
+    shortID: shortID,
+    enabled: true,
+    alarmEnabled: true,
+    alarmGraceMinutes: 5,
+    scheduledDates: scheduledDatesString(+hh, +mm, true, 5),
+    label: document.getElementById('alarm-label')?.textContent || '提醒',
+    snooze: snoozeOn,
+    snoozeType: snoozeOn ? '闹钟' : null,
+    snoozeMinutes: snoozeOn ? 5 : null,
+  };
+  reminders.unshift(r);
+  historyGroups.unshift({
+    displayID: shortID,
+    reminderLabel: `每天 ${hh}:${mm}`,
+    kinds: [
+      { kind: 'phone', slots: 3, count: 3 },
+      { kind: 'watch', slots: 3, count: 3 },
+      { kind: 'alarm', slots: 3, count: 3, status: '成功' },
+    ],
+  });
+  closeAllSheets();
+  renderReminders();
+}
+
+function renderAll() {
+  renderActiveCards();
+  renderActivityGrid();
+  renderReminders();
+  renderHistoryRecords();
+}
+
+// ===== 计时器 =====
+function updateTimers() {
+  document.querySelectorAll('.active-time[data-start]').forEach(el => {
+    el.textContent = formatActiveDuration(Date.now() - parseInt(el.dataset.start));
+  });
+  requestAnimationFrame(updateTimers);
+}
+
+// ===== 初始化 =====
+copySample();
+if (dataMode === 'empty') clearData();
+renderAll();
+renderCalendar();
+renderStats();
+renderManageTypes();
+renderIconPicker();
+renderColorPicker();
+updateTimers();
+applyHash();
+</script>
+</body>
+</html>

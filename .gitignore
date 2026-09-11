@@ -38,3 +38,7 @@ fastlane/test_output
 
 # Code Injection
 iOSInjectionProject/
+
+# Excel 临时锁定文件
+.~*.*.xlsx
+测试用例/.~*

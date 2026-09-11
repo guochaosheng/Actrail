@@ -1,19 +1,5 @@
 import SwiftUI
 
-private enum HistoryRow: Identifiable {
-    case groupHeader(ReminderLogGroup)
-    case kindRow(ReminderLogGroup, ReminderLogKindSection)
-
-    var id: String {
-        switch self {
-        case .groupHeader(let group):
-            return "group-\(group.id?.uuidString ?? group.displayID)"
-        case .kindRow(let group, let kindSection):
-            return "kind-\(group.id?.uuidString ?? group.displayID)-\(kindSection.kind.rawValue)"
-        }
-    }
-}
-
 struct HomeView: View {
     @Bindable var viewModel: ActivityViewModel
     @State private var showingAddActivity = false
@@ -103,89 +89,6 @@ struct HomeView: View {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundColor(.blue)
                         }
-                    }
-                }
-
-                // 提醒历史
-                Section {
-                    if viewModel.reminderLogs.isEmpty {
-                        Text("暂无提醒记录")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 40)
-                    } else {
-                        let rows = viewModel.reminderLogGroups().flatMap { group -> [HistoryRow] in
-                            var r: [HistoryRow] = [.groupHeader(group)]
-                            for kindSection in group.sections {
-                                r.append(.kindRow(group, kindSection))
-                            }
-                            return r
-                        }
-                        ForEach(rows) { row in
-                            switch row {
-                            case .groupHeader(let group):
-                                HStack(spacing: 6) {
-                                    Text(group.displayID)
-                                        .font(.caption)
-                                        .monospaced()
-                                        .foregroundColor(.blue)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-                                    Text(group.reminderLabel)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                    Spacer()
-                                }
-                                .padding(.top, 8)
-                                .padding(.bottom, 2)
-                                .listRowSeparator(.hidden)
-
-                            case .kindRow(let group, let kindSection):
-                                NavigationLink {
-                                    KindDetailView(
-                                        title: "\(group.displayID) · \(kindSection.kind.title)",
-                                        kindSection: kindSection,
-                                        deleteLog: { viewModel.deleteReminderLog($0) }
-                                    )
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: kindSection.kind.icon)
-                                            .foregroundColor(.blue)
-                                            .frame(width: 22)
-                                        Text(kindSection.kind.title)
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                        Spacer()
-                                        let total = kindSection.rows.reduce(0) { $0 + $1.logs.count }
-                                        Text("\(total) 条")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        if kindSection.kind == .other {
-                                            Text(kindSection.rows.first?.finalStatus ?? "")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        } else {
-                                            Text("\(kindSection.rows.count) 个时段")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                    .padding(.vertical, 6)
-                                    .contentShape(Rectangle())
-                                }
-                            }
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Text("提醒历史")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(viewModel.reminderLogs.count) 条")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -412,12 +315,12 @@ struct AddReminderView: View {
                         }
                     }
                 }
-            }
-            .navigationTitle("添加提醒")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("取消") { dismiss() }
+                .navigationTitle("添加提醒")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("取消") { dismiss() }
+                    }
                 }
             }
         }
@@ -431,105 +334,6 @@ struct AddReminderView: View {
             alarmSound: alarmSound
         )
         dismiss()
-    }
-}
-
-struct KindDetailView: View {
-    let title: String
-    let kindSection: ReminderLogKindSection
-    let deleteLog: (ReminderLogEntry) -> Void
-
-    var body: some View {
-        List {
-            ForEach(kindSection.rows) { section in
-                NavigationLink {
-                    ReminderPlanDetailView(
-                        title: section.kind == .other ? "其它事件" : "\(section.kind.title) · \(section.slotLabel)",
-                        logs: section.logs,
-                        deleteLog: deleteLog
-                    )
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "clock")
-                            .foregroundColor(.blue)
-                            .frame(width: 22)
-                        Text(section.slotLabel)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        Text("\(section.logs.count) 条")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(section.finalStatus)
-                            .font(.caption)
-                            .foregroundColor(section.logs.contains { !$0.sentSuccessfully } ? .red : .secondary)
-                    }
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                }
-            }
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .listStyle(.plain)
-    }
-}
-
-struct ReminderPlanDetailView: View {
-    let title: String
-    let logs: [ReminderLogEntry]
-    let deleteLog: (ReminderLogEntry) -> Void
-
-    var body: some View {
-        List {
-            ForEach(logs) { log in
-                ReminderPlanLogRow(log: log)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            deleteLog(log)
-                        } label: {
-                            Label("删除", systemImage: "trash")
-                        }
-                    }
-            }
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-private struct ReminderPlanLogRow: View {
-    let log: ReminderLogEntry
-
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MM/dd HH:mm:ss"
-        return f
-    }()
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(log.content)
-                .font(.subheadline)
-            HStack {
-                Text("预设 \(Self.timeFormatter.string(from: log.presetTime))")
-                Text("·")
-                Text("发出 \(Self.timeFormatter.string(from: log.sentTime))")
-            }
-            .font(.caption2)
-            .foregroundColor(.secondary)
-            HStack {
-                Text(log.source)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text(log.status.isEmpty ? (log.sentSuccessfully ? "成功" : "失败") : log.status)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(log.sentSuccessfully ? (log.status == "已取消" ? .gray : .green) : .red)
-            }
-        }
-        .padding(.vertical, 4)
     }
 }
 

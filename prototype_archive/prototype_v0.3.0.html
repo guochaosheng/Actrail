@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>行迹 - 原型图</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --blue: #007AFF; --green: #34C759; --orange: #FF9500; --pink: #FF2D55;
+  --indigo: #5856D6; --purple: #AF52DE; --red: #FF3B30; --yellow: #FFCC00;
+  --gray: #8E8E93; --bg: #F2F2F7; --card-bg: #FFFFFF; --separator: #C6C6C8;
+  --text-primary: #000000; --text-secondary: rgba(60,60,67,0.6);
+  --safe-bottom: env(safe-area-inset-bottom, 0px); --tab-height: 49px;
+}
+html, body {
+  font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  background: var(--bg); color: var(--text-primary);
+  height: 100%; overflow: hidden; -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input { font-family: inherit; }
+
+.phone-frame {
+  position: relative; width: 100%; height: 100%;
+  max-width: 430px; margin: 0 auto; background: var(--bg); overflow: hidden;
+}
+@media (min-width: 500px) {
+  body { display: flex; align-items: center; justify-content: center; background: #1a1a1a; }
+  .phone-frame {
+    width: 393px; height: 852px; border-radius: 47px;
+    border: 3px solid #333; box-shadow: 0 0 60px rgba(0,0,0,0.5);
+    margin: 0; overflow: hidden;
+  }
+}
+
+/* Tab content */
+.tab-content { display: none; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.tab-content.active { display: block; }
+.tab-content.with-bottom-bar { padding-bottom: calc(var(--tab-height) + var(--safe-bottom)); }
+
+/* Navigation bar (compact, for history/stats/settings) */
+.nav-bar {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(242,242,247,0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  padding: 12px 16px 8px; border-bottom: 0.5px solid var(--separator);
+}
+.nav-bar-title { font-size: 17px; font-weight: 600; }
+
+/* Toolbar (for Home) */
+.toolbar {
+  display: flex; justify-content: flex-end; padding: 8px 16px;
+}
+
+/* Tab bar */
+.tab-bar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 430px; height: var(--tab-height);
+  background: rgba(249,249,249,0.94); backdrop-filter: blur(20px);
+  border-top: 0.5px solid var(--separator);
+  display: flex; align-items: center; justify-content: space-around;
+  z-index: 1000;
+}
+.tab-item {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 4px 0; min-width: 64px; color: var(--gray);
+}
+.tab-item.active { color: var(--blue); }
+.tab-item svg { width: 24px; height: 24px; }
+.tab-item span { font-size: 10px; font-weight: 500; }
+
+/* Section header — matches SwiftUI .headline secondary */
+.section-header {
+  font-size: 17px; font-weight: 600; color: rgba(60,60,67,0.6);
+  padding: 20px 16px 8px;
+}
+.section-header:first-child { padding-top: 8px; }
+
+/* Home title row */
+.home-title-row {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 4px 16px 0;
+}
+.home-title { font-size: 22px; font-weight: 700; }
+.connection-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; }
+.connection-text { font-size: 13px; color: var(--text-secondary); }
+
+/* Card */
+.card {
+  background: var(--card-bg); border-radius: 12px;
+  box-shadow: 0 0.5px 0 rgba(0,0,0,0.04); overflow: hidden;
+}
+
+/* Active activity card */
+.active-card {
+  background: var(--card-bg); border-radius: 16px; padding: 16px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 16px 8px;
+}
+.active-icon {
+  width: 50px; height: 50px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.active-icon svg { width: 26px; height: 26px; }
+.active-info { flex: 1; min-width: 0; }
+/* SwiftUI: name first (.headline), then time (.title2 bold) */
+.active-name { font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+.active-time {
+  font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.active-stop {
+  width: 50px; height: 50px; border-radius: 50%;
+  background: rgba(255,59,48,0.2); color: var(--red);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.active-stop svg { width: 22px; height: 22px; }
+
+/* Activity grid */
+.activity-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; padding: 0 16px; }
+.activity-btn { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0; }
+.activity-btn-circle {
+  width: 60px; height: 60px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.activity-btn-circle svg { width: 28px; height: 28px; }
+.activity-btn-label { font-size: 13px; color: var(--text-primary); }
+
+/* Reminder row — matches SwiftUI HStack layout */
+.reminder-row {
+  display: flex; align-items: center; padding: 4px 16px;
+  background: var(--card-bg); position: relative; gap: 0;
+}
+.reminder-row + .reminder-row::before {
+  content: ''; position: absolute; top: 0; left: 62px; right: 0; height: 0.5px;
+  background: var(--separator);
+}
+.reminder-bell {
+  width: 30px; flex-shrink: 0; color: var(--red);
+  display: flex; align-items: center; justify-content: flex-start;
+}
+.reminder-bell svg { width: 22px; height: 22px; }
+.reminder-info { flex: 1; min-width: 0; padding-left: 8px; }
+.reminder-device-row { display: flex; align-items: center; gap: 2px; }
+.reminder-label { font-size: 15px; }
+.reminder-dot { color: var(--text-secondary); }
+.reminder-device-icon { width: 14px; height: 14px; color: var(--text-secondary); }
+.reminder-device-text { font-size: 12px; color: var(--text-secondary); }
+.reminder-time-row { display: flex; align-items: baseline; margin-top: 2px; }
+.reminder-time { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; flex: 1; }
+.reminder-badge {
+  font-size: 11px; font-weight: 500; color: var(--blue);
+  font-family: 'SF Mono', 'Menlo', monospace;
+  background: rgba(0,122,255,0.12); border-radius: 4px;
+  padding: 1px 5px; margin-left: auto; white-space: nowrap;
+}
+.reminder-dates { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+/* Toggle */
+.toggle {
+  position: relative; width: 51px; height: 31px; margin-left: 8px;
+  background: #E9E9EA; border-radius: 16px; transition: background 0.2s; cursor: pointer; flex-shrink: 0;
+}
+.toggle.on { background: var(--green); }
+.toggle-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 27px; height: 27px; border-radius: 50%;
+  background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: transform 0.2s;
+}
+.toggle.on .toggle-knob { transform: translateX(20px); }
+
+/* Calendar */
+.calendar-picker {
+  padding: 8px 16px 12px; background: var(--card-bg);
+  margin: 0 16px; border-radius: 12px;
+}
+.calendar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 4px 12px; font-size: 17px; font-weight: 600;
+}
+.calendar-nav { color: var(--blue); font-size: 20px; padding: 4px 8px; }
+.calendar-weekdays {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  text-align: center; font-size: 13px; color: var(--gray); font-weight: 500; margin-bottom: 8px;
+}
+.calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 15px; }
+.calendar-day {
+  padding: 8px 0; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; margin: 0 auto;
+}
+.calendar-day:hover { background: #E5E5EA; }
+.calendar-day.today { color: var(--blue); font-weight: 600; }
+.calendar-day.selected { background: var(--blue); color: white; font-weight: 600; }
+.calendar-day.other-month { color: #C7C7CC; }
+
+/* Record row (History) */
+.record-row {
+  display: flex; align-items: center; padding: 4px 16px;
+  background: var(--card-bg); gap: 10px; min-height: 44px; position: relative;
+}
+.record-row + .record-row::before {
+  content: ''; position: absolute; top: 0; left: 56px; right: 16px; height: 0.5px;
+  background: var(--separator);
+}
+.record-icon {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.record-icon svg { width: 18px; height: 18px; }
+.record-info { flex: 1; min-width: 0; }
+.record-name { font-size: 17px; font-weight: 600; }
+.record-time { font-size: 12px; color: var(--text-secondary); }
+.record-duration { font-size: 15px; color: var(--text-secondary); white-space: nowrap; }
+.record-active-badge { font-size: 13px; color: var(--green); }
+
+/* Statistics */
+.period-picker {
+  display: flex; margin: 8px 16px 16px;
+  background: #E5E5EA; border-radius: 8px; padding: 2px;
+}
+.period-btn {
+  flex: 1; text-align: center; padding: 7px 0; font-size: 13px; font-weight: 600;
+  border-radius: 7px; color: #636366; transition: all 0.2s;
+}
+.period-btn.active { background: white; color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+.summary-card {
+  background: var(--card-bg); border-radius: 16px; padding: 16px; margin: 0 16px 0;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 16px;
+}
+.summary-label { font-size: 15px; color: var(--text-secondary); }
+.summary-value { font-size: 22px; font-weight: 700; margin: 2px 0; }
+.summary-change { font-size: 13px; color: var(--green); }
+.summary-icon {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: rgba(0,122,255,0.2); color: var(--blue);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: auto;
+}
+.summary-icon svg { width: 30px; height: 30px; }
+
+.chart-card {
+  background: var(--card-bg); border-radius: 16px; padding: 16px; margin: 20px 16px 0;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+.chart-title { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
+.chart-bar {
+  height: 100px; border-radius: 8px; overflow: hidden; display: flex; margin-bottom: 12px;
+}
+.chart-segment { transition: width 0.4s; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 16px; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+.ranking-row { display: flex; align-items: center; padding: 12px 0; gap: 12px; }
+.ranking-row + .ranking-row { border-top: 0.5px solid var(--separator); }
+.ranking-name { width: 60px; font-size: 15px; font-weight: 500; flex-shrink: 0; text-align: left; }
+.ranking-bar-bg { flex: 1; height: 8px; background: #E5E5EA; border-radius: 4px; overflow: hidden; }
+.ranking-bar { height: 100%; border-radius: 4px; transition: width 0.4s; }
+.ranking-duration { width: 60px; text-align: right; font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
+
+/* Settings — no icons, plain iOS grouped list */
+.settings-group { margin: 0 16px 24px; }
+.settings-card { background: var(--card-bg); border-radius: 12px; overflow: hidden; }
+.settings-row {
+  display: flex; align-items: center; padding: 11px 16px;
+  min-height: 44px; position: relative; font-size: 17px;
+}
+.settings-row + .settings-row::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px;
+  background: var(--separator);
+}
+.settings-row-label { flex: 1; }
+.settings-row-trailing { color: #C7C7CC; display: flex; align-items: center; gap: 4px; }
+.settings-row-value { color: var(--text-secondary); }
+
+/* Sheet */
+.sheet-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4); z-index: 2000;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.sheet-overlay.show { opacity: 1; pointer-events: all; }
+.sheet {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 430px; max-height: 92vh;
+  background: var(--bg); border-radius: 16px 16px 0 0;
+  z-index: 2001; overflow: hidden; display: flex; flex-direction: column;
+  transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  transform: translateX(-50%) translateY(100%);
+}
+.sheet.show { transform: translateX(-50%) translateY(0); }
+.sheet-handle { width: 36px; height: 5px; border-radius: 3px; background: #C7C7CC; margin: 8px auto 0; }
+.sheet-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; font-size: 17px; font-weight: 600;
+}
+.sheet-content { overflow-y: auto; flex: 1; padding-bottom: 40px; }
+.sheet-close { font-size: 17px; color: var(--blue); font-weight: 400; }
+.sheet-save { font-size: 17px; color: var(--blue); font-weight: 600; }
+
+/* Form */
+.form-group { background: var(--card-bg); border-radius: 12px; margin: 12px 16px; overflow: hidden; }
+.form-row {
+  display: flex; align-items: center; padding: 11px 16px;
+  min-height: 44px; position: relative;
+}
+.form-row + .form-row::before {
+  content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px;
+  background: var(--separator);
+}
+.form-label { font-size: 17px; min-width: 80px; }
+.form-input {
+  flex: 1; border: none; outline: none; font-size: 17px; text-align: right; background: transparent;
+}
+.form-text { font-size: 17px; color: var(--text-secondary); }
+.form-section-title {
+  font-size: 13px; color: var(--gray); text-transform: uppercase;
+  padding: 20px 16px 8px; letter-spacing: 0.08px;
+}
+.form-help { font-size: 13px; color: var(--gray); padding: 8px 16px; line-height: 1.4; }
+.form-btn-full {
+  margin: 16px; padding: 14px; border-radius: 12px;
+  background: var(--blue); color: white; font-size: 17px; font-weight: 600;
+  text-align: center; width: calc(100% - 32px);
+}
+
+/* Wheel picker */
+.wheel-picker { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px; }
+.wheel-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.wheel-arrow { color: var(--blue); font-size: 18px; padding: 4px 8px; cursor: pointer; }
+.wheel-value {
+  font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums;
+  background: #E5E5EA; border-radius: 8px; padding: 6px 16px; min-width: 56px; text-align: center;
+}
+.wheel-label { font-size: 13px; color: var(--gray); }
+
+/* Icon grid */
+.icon-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 16px; }
+.icon-pick {
+  width: 50px; height: 50px; border-radius: 50%;
+  background: #F2F2F7; display: flex; align-items: center; justify-content: center;
+  margin: 0 auto; cursor: pointer; transition: all 0.15s;
+}
+.icon-pick svg { width: 24px; height: 24px; color: var(--gray); }
+.icon-pick.selected { background: rgba(0,122,255,0.2); }
+.icon-pick.selected svg { color: var(--blue); }
+
+/* Color grid */
+.color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 16px; }
+.color-pick {
+  width: 40px; height: 40px; border-radius: 50%;
+  margin: 0 auto; cursor: pointer; transition: all 0.15s; border: 3px solid transparent;
+}
+.color-pick.selected { border-color: var(--text-primary); }
+
+/* History group header */
+.history-group { margin-top: 8px; }
+.history-group-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 16px; background: var(--card-bg);
+}
+.history-group-badge {
+  font-size: 12px; font-weight: 500; color: var(--blue);
+  font-family: 'SF Mono', monospace;
+  background: rgba(0,122,255,0.12); border-radius: 4px; padding: 2px 6px;
+}
+.history-group-label { font-size: 15px; font-weight: 500; flex: 1; }
+.history-item {
+  display: flex; align-items: center; padding: 10px 16px 10px 44px;
+  background: var(--card-bg); font-size: 15px; gap: 8px; position: relative;
+}
+.history-item + .history-item::before {
+  content: ''; position: absolute; top: 0; left: 44px; right: 0; height: 0.5px;
+  background: var(--separator);
+}
+.history-item-icon { color: var(--blue); width: 22px; flex-shrink: 0; display: flex; align-items: center; }
+.history-item-icon svg { width: 18px; height: 18px; }
+
+::-webkit-scrollbar { display: none; }
+.empty-state { text-align: center; padding: 32px 16px; color: var(--gray); font-size: 15px; }
+</style>
+</head>
+<body>
+
+<div class="phone-frame" id="app">
+  <!-- ===== Tab 1: Home ===== -->
+  <div class="tab-content with-bottom-bar active" id="tab-home">
+    <!-- Toolbar with gear icon -->
+    <div class="toolbar">
+      <button onclick="openSheet('manageTypes')" style="padding:8px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#007AFF"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
+      </button>
+    </div>
+
+    <!-- Title row — inline with baseline alignment, tap to toggle connection -->
+    <div class="home-title-row" onclick="toggleConnection()" style="cursor:pointer;">
+      <span class="home-title">行迹</span>
+      <span class="connection-dot" id="conn-dot"></span>
+      <span class="connection-text" id="conn-text">已连接</span>
+    </div>
+
+    <!-- 正在进行 -->
+    <div class="section-header">正在进行</div>
+    <div id="active-section"></div>
+
+    <!-- 记录活动 -->
+    <div class="section-header">记录活动</div>
+    <div class="activity-grid" id="activity-grid"></div>
+
+    <!-- 记录提醒 -->
+    <div class="section-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>记录提醒</span>
+      <button onclick="openSheet('addReminder')" style="padding:0;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#007AFF"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zm1-11h-2v4H7v2h4v4h2v-4h4v-2h-4V9z"/></svg>
+      </button>
+    </div>
+    <div id="reminder-section"></div>
+
+    <!-- 提醒历史 -->
+    <div class="section-header" style="display:flex;align-items:baseline;justify-content:space-between;">
+      <span>提醒历史</span>
+      <span id="history-count" style="font-size:13px;font-weight:400;color:var(--text-secondary);"></span>
+    </div>
+    <div id="reminder-history"></div>
+
+    <div style="height:80px;"></div>
+  </div>
+
+  <!-- ===== Tab 2: History ===== -->
+  <div class="tab-content with-bottom-bar" id="tab-history">
+    <div class="nav-bar">
+      <div class="nav-bar-title">历史记录</div>
+    </div>
+    <div style="padding-top:8px;">
+      <div class="calendar-picker">
+        <div class="calendar-header">
+          <button class="calendar-nav">&lsaquo;</button>
+          <span>2026年9月</span>
+          <button class="calendar-nav">&rsaquo;</button>
+        </div>
+        <div class="calendar-weekdays">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div class="calendar-days" id="calendar-days"></div>
+      </div>
+    </div>
+    <div id="history-records" style="margin-top:8px;"></div>
+    <div style="height:80px;"></div>
+  </div>
+
+  <!-- ===== Tab 3: Statistics ===== -->
+  <div class="tab-content with-bottom-bar" id="tab-stats">
+    <div class="nav-bar">
+      <div class="nav-bar-title">统计</div>
+    </div>
+    <div style="padding-top:12px;">
+      <div class="period-picker">
+        <div class="period-btn active" onclick="switchPeriod(this)">今日</div>
+        <div class="period-btn" onclick="switchPeriod(this)">本周</div>
+        <div class="period-btn" onclick="switchPeriod(this)">本月</div>
+      </div>
+      <div class="summary-card">
+        <div>
+          <div class="summary-label">总时长</div>
+          <div class="summary-value">8小时30分钟</div>
+          <div class="summary-change">比昨天多2小时</div>
+        </div>
+        <div class="summary-icon">
+          <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z"/><path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">活动分布</div>
+        <div class="chart-bar">
+          <div class="chart-segment" style="width:50%;background:var(--blue);"></div>
+          <div class="chart-segment" style="width:30%;background:var(--green);"></div>
+          <div class="chart-segment" style="width:20%;background:var(--orange);"></div>
+        </div>
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--blue);"></div>工作 50%</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--green);"></div>运动 30%</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--orange);"></div>阅读 20%</div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">活动排行</div>
+        <div id="ranking-list"></div>
+      </div>
+    </div>
+    <div style="height:80px;"></div>
+  </div>
+
+  <!-- ===== Tab 4: Settings ===== -->
+  <div class="tab-content with-bottom-bar" id="tab-settings">
+    <div class="nav-bar">
+      <div class="nav-bar-title">设置</div>
+    </div>
+    <div style="padding-top:12px;">
+      <!-- 通用 -->
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-label">启用通知</div>
+            <div class="toggle on" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">触觉反馈</div>
+            <div class="toggle on" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-label">自动备份</div>
+            <div class="toggle" onclick="this.classList.toggle('on')"><div class="toggle-knob"></div></div>
+          </div>
+        </div>
+      </div>
+      <!-- 开发者 -->
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">调试</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <!-- 外观 -->
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">主题颜色</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">深色模式</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <!-- 数据 -->
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">导出数据</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">导入数据</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">清除数据</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <!-- 关于 -->
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-label">版本</div>
+            <div class="settings-row-value">1.0.0</div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">使用条款</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">隐私政策</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <!-- 支持 -->
+      <div class="settings-group">
+        <div class="settings-card">
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">帮助中心</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">联系我们</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+          <div class="settings-row" style="cursor:pointer;">
+            <div class="settings-row-label">给个好评</div>
+            <div class="settings-row-trailing"><svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg></div>
+          </div>
+        </div>
+      </div>
+      <div style="height:80px;"></div>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-item active" onclick="switchTab('home')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42A8.962 8.962 0 0012 4c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>
+      <span>活动</span>
+    </button>
+    <button class="tab-item" onclick="switchTab('history')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"/></svg>
+      <span>历史</span>
+    </button>
+    <button class="tab-item" onclick="switchTab('stats')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 2v20c-5.07-.5-9-4.79-9-10s3.93-9.5 9-10zm2 0v9h9c-.47-4.73-4.24-8.5-9-9zm0 11v9c4.75-.5 8.53-4.27 9-9h-9z"/></svg>
+      <span>统计</span>
+    </button>
+    <button class="tab-item" onclick="switchTab('settings')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"/></svg>
+      <span>设置</span>
+    </button>
+  </div>
+
+  <!-- Sheet overlay -->
+  <div class="sheet-overlay" id="sheet-overlay" onclick="closeAllSheets()"></div>
+
+  <!-- Add Reminder Sheet -->
+  <div class="sheet" id="sheet-addReminder">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <button class="sheet-close" onclick="closeAllSheets()">取消</button>
+      <span>添加提醒</span>
+      <button class="sheet-save" onclick="closeAllSheets()">保存</button>
+    </div>
+    <div class="sheet-content">
+      <div class="form-section-title">每天提醒时间</div>
+      <div class="form-group">
+        <div class="wheel-picker">
+          <div class="wheel-col">
+            <button class="wheel-arrow" onclick="adjustWheel('hour',1)">▲</button>
+            <div class="wheel-value" id="wheel-hour">08</div>
+            <button class="wheel-arrow" onclick="adjustWheel('hour',-1)">▼</button>
+            <div class="wheel-label">时</div>
+          </div>
+          <span style="font-size:22px;font-weight:600;">:</span>
+          <div class="wheel-col">
+            <button class="wheel-arrow" onclick="adjustWheel('min',1)">▲</button>
+            <div class="wheel-value" id="wheel-min">00</div>
+            <button class="wheel-arrow" onclick="adjustWheel('min',-1)">▼</button>
+            <div class="wheel-label">分</div>
+          </div>
+        </div>
+      </div>
+      <div class="form-group" style="padding:16px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <svg width="20" height="20" fill="var(--blue)" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">每天该时刻在 iPhone 与 iWatch 各发送本地通知，提醒复检当前正在进行的活动是否正确</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.4;">智能延续：每次打开 iPhone 或 iWatch 行迹，自动将排定延续到未来 3 天；连续 3 天未打开则停止提醒。</div>
+      </div>
+      <div class="form-section-title">闹钟持续提醒</div>
+      <div class="form-group">
+        <div class="form-row">
+          <div class="form-label">闹钟持续提醒</div>
+          <div style="flex:1;"></div>
+          <div class="toggle" onclick="this.classList.toggle('on');toggleAlarmOptions(this)" id="alarm-toggle"><div class="toggle-knob"></div></div>
+        </div>
+        <div id="alarm-options" style="display:none;">
+          <div class="form-row">
+            <div class="form-label">未打开等待时间</div>
+            <div style="flex:1;"></div>
+            <div class="form-text">5 分钟</div>
+            <svg width="8" height="13" viewBox="0 0 8 13" style="margin-left:4px;"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+          </div>
+          <div class="form-row">
+            <div class="form-label">闹钟铃声</div>
+            <div style="flex:1;"></div>
+            <div class="form-text">默认</div>
+            <svg width="8" height="13" viewBox="0 0 8 13" style="margin-left:4px;"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="form-help" id="alarm-help-text" style="display:none;"></div>
+      <div class="form-btn-full" onclick="closeAllSheets()">保存</div>
+    </div>
+  </div>
+
+  <!-- Manage Types Sheet -->
+  <div class="sheet" id="sheet-manageTypes">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <button class="sheet-close" onclick="closeAllSheets()">完成</button>
+      <span>活动类型管理</span>
+      <button class="sheet-save" onclick="openSheet('addType')" style="font-size:22px;">+</button>
+    </div>
+    <div class="sheet-content" id="manage-type-list"></div>
+  </div>
+
+  <!-- Add Activity Type Sheet -->
+  <div class="sheet" id="sheet-addType">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <button class="sheet-close" onclick="closeAllSheets()">取消</button>
+      <span>添加活动类型</span>
+      <button class="sheet-save" onclick="closeAllSheets()">保存</button>
+    </div>
+    <div class="sheet-content">
+      <div class="form-section-title">基本信息</div>
+      <div class="form-group">
+        <div class="form-row">
+          <div class="form-label">活动名称</div>
+          <input class="form-input" placeholder="输入名称">
+        </div>
+        <div class="form-row">
+          <div class="form-label">分组</div>
+          <input class="form-input" placeholder="默认">
+        </div>
+      </div>
+      <div class="form-section-title">选择图标</div>
+      <div class="form-group" style="padding:4px;">
+        <div class="icon-grid" id="icon-picker-grid"></div>
+      </div>
+      <div class="form-section-title">选择颜色</div>
+      <div class="form-group" style="padding:4px;">
+        <div class="color-grid" id="color-picker-grid"></div>
+      </div>
+      <div class="form-btn-full" onclick="closeAllSheets()">保存</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const activityTypes = [
+  { id: 1, name: '工作', icon: 'briefcase', color: '#007AFF', group: '工作' },
+  { id: 2, name: '运动', icon: 'run', color: '#34C759', group: '健康' },
+  { id: 3, name: '阅读', icon: 'book', color: '#FF9500', group: '学习' },
+  { id: 4, name: '睡眠', icon: 'moon', color: '#5856D6', group: '健康' },
+  { id: 5, name: '用餐', icon: 'fork', color: '#FF2D55', group: '生活' },
+  { id: 6, name: '通勤', icon: 'car', color: '#8E8E93', group: '生活' },
+];
+
+const iconSVGs = {
+  briefcase: '<path d="M20 7h-4V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-6 0h-4V5h4v2z"/>',
+  run: '<path d="M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3A7.02 7.02 0 0018.39 13v-2c-2.15 0-3.96-1.12-5.01-2.78l-1.08-1.71c-.38-.6-1.05-.99-1.79-.99-.24 0-.47.04-.69.1L4.53 8.43v5.07h2V9.56l1.81-.73-1.14 5.07-3.25-1.43-.66 1.43 3.54 1.57z"/>',
+  book: '<path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/>',
+  moon: '<path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>',
+  fork: '<path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/>',
+  car: '<path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>',
+};
+
+const activeRecords = [
+  { type: activityTypes[0], startTime: Date.now() - 3723000 },
+  { type: activityTypes[1], startTime: Date.now() - 1560000 },
+];
+
+const reminders = [
+  { id: 1, time: '08:00', shortID: 'a3f1', enabled: true, scheduledDates: '每天', alarmEnabled: true, alarmGraceMinutes: 5 },
+  { id: 2, time: '22:30', shortID: 'b7e2', enabled: false, scheduledDates: '工作日', alarmEnabled: false, alarmGraceMinutes: 5 },
+];
+
+const historyRecords = [
+  { type: activityTypes[0], name: '工作', startTime: '09:00', duration: '2h 30m', active: false },
+  { type: activityTypes[1], name: '运动', startTime: '12:00', duration: '45m', active: false },
+  { type: activityTypes[2], name: '阅读', startTime: '14:00', duration: '1h 15m', active: false },
+  { type: activityTypes[3], name: '休息', startTime: '16:00', duration: null, active: true },
+  { type: activityTypes[4], name: '用餐', startTime: '18:00', duration: '30m', active: false },
+];
+
+const rankingData = [
+  { name: '工作', duration: '4小时', pct: 50, color: '#007AFF' },
+  { name: '运动', duration: '2小时', pct: 30, color: '#34C759' },
+  { name: '阅读', duration: '1小时', pct: 20, color: '#FF9500' },
+];
+
+const reminderHistoryGroups = [
+  { shortID: 'a3f1', label: '08:00 提醒', kindItems: [
+    { icon: 'phone', title: 'iPhone 本地通知', count: 3, timeSlots: 2 },
+    { icon: 'watch', title: 'Apple Watch 本地通知', count: 3, timeSlots: 2 },
+    { icon: 'alarm', title: '闹钟提醒', count: 2, status: '成功' },
+  ]},
+  { shortID: 'b7e2', label: '22:30 提醒', kindItems: [
+    { icon: 'phone', title: 'iPhone 本地通知', count: 2, timeSlots: 1 },
+    { icon: 'alarm', title: '闹钟提醒', count: 1, status: '失败' },
+  ]},
+];
+
+let connected = true;
+function toggleConnection() {
+  connected = !connected;
+  const dot = document.getElementById('conn-dot');
+  const text = document.getElementById('conn-text');
+  dot.style.background = connected ? 'var(--green)' : 'var(--orange)';
+  text.textContent = connected ? '已连接' : '未连接';
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+function formatElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0 ? `${h}小时${String(m).padStart(2,'0')}分${String(sec).padStart(2,'0')}秒` : `${m}分${String(sec).padStart(2,'0')}秒`;
+}
+
+function renderActiveCards() {
+  const el = document.getElementById('active-section');
+  el.innerHTML = activeRecords.map((r, i) => `
+    <div class="active-card">
+      <div class="active-icon" style="background:${r.type.color}20;color:${r.type.color};">
+        <svg fill="currentColor" viewBox="0 0 24 24">${iconSVGs[r.type.icon]}</svg>
+      </div>
+      <div class="active-info">
+        <div class="active-name">${r.type.name}</div>
+        <div class="active-time" data-start="${r.startTime}">${formatElapsed(Date.now() - r.startTime)}</div>
+      </div>
+      <button class="active-stop" onclick="stopActivity(${i})">
+        <svg fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      </button>
+    </div>
+  `).join('');
+}
+
+function stopActivity(idx) { activeRecords.splice(idx, 1); renderActiveCards(); }
+
+function renderActivityGrid() {
+  const el = document.getElementById('activity-grid');
+  el.innerHTML = activityTypes.map(t => `
+    <button class="activity-btn" onclick="startActivity(${t.id})">
+      <div class="activity-btn-circle" style="background:${t.color}20;color:${t.color};">
+        <svg fill="currentColor" viewBox="0 0 24 24">${iconSVGs[t.icon]}</svg>
+      </div>
+      <div class="activity-btn-label">${t.name}</div>
+    </button>
+  `).join('');
+}
+
+function startActivity(id) {
+  const t = activityTypes.find(a => a.id === id);
+  if (!t || activeRecords.find(r => r.type.id === id)) return;
+  activeRecords.push({ type: t, startTime: Date.now() });
+  renderActiveCards();
+}
+
+function renderReminders() {
+  const el = document.getElementById('reminder-section');
+  if (reminders.length === 0) { el.innerHTML = '<div class="empty-state">暂无提醒</div>'; return; }
+  el.innerHTML = reminders.map(r => `
+    <div class="reminder-row">
+      <div class="reminder-bell">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+      </div>
+      <div class="reminder-info">
+        <div class="reminder-device-row">
+          <span class="reminder-label">提醒</span>
+          <span class="reminder-dot">·</span>
+          <svg class="reminder-device-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 1h-8A2.5 2.5 0 005 3.5v17A2.5 2.5 0 007.5 23h8a2.5 2.5 0 002.5-2.5v-17A2.5 2.5 0 0015.5 1zm-4 21c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5-4H7V4h9v14z"/></svg>
+          <span class="reminder-device-text">iPhone + iWatch 本地通知</span>
+        </div>
+        <div class="reminder-time-row">
+          <span class="reminder-time">每天 ${r.time}</span>
+          <span class="reminder-badge">#${r.shortID}</span>
+        </div>
+        <div class="reminder-dates">${r.scheduledDates}</div>
+      </div>
+      <div class="toggle ${r.enabled ? 'on' : ''}" onclick="this.classList.toggle('on')">
+        <div class="toggle-knob"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderReminderHistory() {
+  const el = document.getElementById('reminder-history');
+  const totalLogs = reminderHistoryGroups.reduce((sum, g) => sum + g.kindItems.reduce((s, k) => s + k.count, 0), 0);
+  document.getElementById('history-count').textContent = totalLogs + ' 条';
+  el.innerHTML = `<div style="margin:0 16px;"><div class="card">` + reminderHistoryGroups.map(g => `
+    <div class="history-group-header" style="padding:10px 16px;">
+      <span class="history-group-badge">#${g.shortID}</span>
+      <span class="history-group-label">${g.label}</span>
+      <svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+    </div>
+    ${g.kindItems.map((k, ki) => `
+      <div class="history-item" style="${ki === g.kindItems.length - 1 ? 'border-bottom:none;' : ''}">
+        <div class="history-item-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            ${k.icon === 'phone' ? '<path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5z"/>' :
+            k.icon === 'watch' ? '<path d="M15.5 1h-8A2.5 2.5 0 005 3.5v17A2.5 2.5 0 007.5 23h8a2.5 2.5 0 002.5-2.5v-17A2.5 2.5 0 0015.5 1z"/>' :
+            '<path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>'}
+          </svg>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:15px;font-weight:500;">${k.title}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:13px;color:var(--text-secondary);">${k.count} 条</div>
+          <div style="font-size:13px;color:var(--text-secondary);">${k.timeSlots} 个时段</div>
+        </div>
+        <svg width="8" height="13" viewBox="0 0 8 13" style="margin-left:4px;"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </div>
+    `).join('')}
+  `).join('') + `</div></div>`;
+}
+
+function renderCalendar() {
+  const el = document.getElementById('calendar-days');
+  const today = new Date(2026, 8, 10);
+  const year = today.getFullYear(), month = today.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrev = new Date(year, month, 0).getDate();
+  let html = '';
+  for (let i = firstDay - 1; i >= 0; i--) html += `<div class="calendar-day other-month">${daysInPrev - i}</div>`;
+  for (let d = 1; d <= daysInMonth; d++) html += `<div class="calendar-day${d === 10 ? ' today selected' : ''}">${d}</div>`;
+  const total = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  for (let d = 1; d <= total - firstDay - daysInMonth; d++) html += `<div class="calendar-day other-month">${d}</div>`;
+  el.innerHTML = html;
+}
+
+function renderHistoryRecords() {
+  const el = document.getElementById('history-records');
+  el.innerHTML = '<div class="card">' + historyRecords.map(r => `
+    <div class="record-row">
+      <div class="record-icon" style="background:${r.type.color}20;color:${r.type.color};">
+        <svg fill="currentColor" viewBox="0 0 24 24">${iconSVGs[r.type.icon]}</svg>
+      </div>
+      <div class="record-info">
+        <div class="record-name">${r.name}</div>
+        <div class="record-time">${r.startTime}</div>
+      </div>
+      ${r.active ? '<span class="record-active-badge">进行中</span>' : `<span class="record-duration">${r.duration}</span>`}
+    </div>
+  `).join('') + '</div>';
+}
+
+function renderRanking() {
+  const el = document.getElementById('ranking-list');
+  el.innerHTML = rankingData.map(r => `
+    <div class="ranking-row">
+      <div class="ranking-name">${r.name}</div>
+      <div class="ranking-bar-bg"><div class="ranking-bar" style="width:${r.pct}%;background:${r.color};"></div></div>
+      <div class="ranking-duration">${r.duration}</div>
+    </div>
+  `).join('');
+}
+
+function renderManageTypes() {
+  const el = document.getElementById('manage-type-list');
+  el.innerHTML = '<div class="card" style="margin:8px 16px;">' + activityTypes.map(t => `
+    <div class="settings-row">
+      <svg width="30" height="30" fill="${t.color}" viewBox="0 0 24 24" style="flex-shrink:0;margin-right:12px;">${iconSVGs[t.icon]}</svg>
+      <div class="settings-row-label">${t.name}</div>
+      <div class="settings-row-trailing">
+        <span style="font-size:13px;color:var(--text-secondary);margin-right:4px;">${t.group}</span>
+        <svg width="8" height="13" viewBox="0 0 8 13"><path d="M1 1l5 5-5 5" stroke="#C7C7CC" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      </div>
+    </div>
+  `).join('') + '</div>';
+}
+
+function renderIconPicker() {
+  const icons = ['star.fill','heart.fill','book.fill','figure.run','briefcase.fill','moon.fill','sun.min.fill','cloud.fill','music.note','gamecontroller.fill','cart.fill','house.fill','car.fill','airplane','bicycle','figure.walk'];
+  const el = document.getElementById('icon-picker-grid');
+  el.innerHTML = icons.map((name, i) => `
+    <div class="icon-pick ${i === 0 ? 'selected' : ''}" onclick="selectIcon(this)" data-icon="${name}">
+      <svg viewBox="0 0 24 24" fill="${i === 0 ? 'var(--blue)' : 'var(--gray)'}">
+        ${name === 'star.fill' ? '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>' :
+        name === 'heart.fill' ? '<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>' :
+        name === 'book.fill' ? '<path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/>' :
+        name === 'figure.run' ? '<path d="M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3A7.02 7.02 0 0018.39 13v-2c-2.15 0-3.96-1.12-5.01-2.78l-1.08-1.71c-.38-.6-1.05-.99-1.79-.99-.24 0-.47.04-.69.1L4.53 8.43v5.07h2V9.56l1.81-.73-1.14 5.07-3.25-1.43-.66 1.43 3.54 1.57z"/>' :
+        name === 'briefcase.fill' ? '<path d="M20 7h-4V5c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2zm-6 0h-4V5h4v2z"/>' :
+        name === 'moon.fill' ? '<path d="M12 3a9 9 0 109 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 01-4.4 2.26 5.403 5.403 0 01-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>' :
+        name === 'sun.min.fill' ? '<path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1z"/>' :
+        name === 'cloud.fill' ? '<path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>' :
+        name === 'music.note' ? '<path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>' :
+        name === 'gamecontroller.fill' ? '<path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>' :
+        name === 'cart.fill' ? '<path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49A1.003 1.003 0 0020 4H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/>' :
+        name === 'house.fill' ? '<path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>' :
+        name === 'car.fill' ? '<path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>' :
+        name === 'airplane' ? '<path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>' :
+        name === 'bicycle' ? '<path d="M15.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM5 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5zm5.8-10l2.4-2.4.8.8c1.3 1.3 3 2.1 5 2.1v-2c-1.4 0-2.5-.5-3.4-1.4L13.4 5.5c-.4-.4-.9-.5-1.4-.5s-1 .2-1.4.5L7.8 8.4c-.4.4-.6.9-.6 1.4 0 .6.2 1.1.6 1.4L11 14v5h2v-6.2l-2.2-2.3zM19 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z"/>' :
+        '<path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3C14.8 12 16.8 13 19 13v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1L6 8.3V13h2V9.6l1.8-.7z"/>'}
+      </svg>
+    </div>
+  `).join('');
+}
+
+function selectIcon(el) {
+  el.parentElement.querySelectorAll('.icon-pick').forEach(e => {
+    e.classList.remove('selected');
+    e.querySelector('svg').setAttribute('fill', 'var(--gray)');
+  });
+  el.classList.add('selected');
+  el.querySelector('svg').setAttribute('fill', 'var(--blue)');
+}
+
+function renderColorPicker() {
+  const colors = ['#007AFF','#34C759','#FF9500','#FF2D55','#5856D6','#AF52DE','#FF3B30','#FFCC00'];
+  const el = document.getElementById('color-picker-grid');
+  el.innerHTML = colors.map((c, i) => `
+    <div class="color-pick ${i === 0 ? 'selected' : ''}" style="background:${c};" onclick="selectColor(this)"></div>
+  `).join('');
+}
+
+function selectColor(el) {
+  el.parentElement.querySelectorAll('.color-pick').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function openSheet(name) {
+  document.getElementById('sheet-overlay').classList.add('show');
+  document.getElementById('sheet-' + name).classList.add('show');
+}
+
+function closeAllSheets() {
+  document.getElementById('sheet-overlay').classList.remove('show');
+  document.querySelectorAll('.sheet').forEach(s => s.classList.remove('show'));
+}
+
+function adjustWheel(type, delta) {
+  const el = document.getElementById(type === 'hour' ? 'wheel-hour' : 'wheel-min');
+  let v = parseInt(el.textContent) + delta;
+  if (type === 'hour') { v = v > 23 ? 0 : v < 0 ? 23 : v; }
+  else { v = v > 59 ? 0 : v < 0 ? 59 : v; }
+  el.textContent = String(v).padStart(2, '0');
+}
+
+function toggleAlarmOptions(toggle) {
+  const opts = document.getElementById('alarm-options');
+  const help = document.getElementById('alarm-help-text');
+  if (toggle.classList.contains('on')) {
+    opts.style.display = 'block';
+    help.style.display = 'block';
+    help.textContent = '通知发出后，若 5 分钟内未打开 iPhone 且存在进行中的活动，iPhone 将持续振动提醒，直到打开确认';
+  } else {
+    opts.style.display = 'none';
+    help.style.display = 'none';
+  }
+}
+
+function switchPeriod(el) {
+  el.parentElement.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function updateTimers() {
+  document.querySelectorAll('.active-time[data-start]').forEach(el => {
+    el.textContent = formatElapsed(Date.now() - parseInt(el.dataset.start));
+  });
+  requestAnimationFrame(updateTimers);
+}
+
+renderActiveCards();
+renderActivityGrid();
+renderReminders();
+renderReminderHistory();
+renderCalendar();
+renderHistoryRecords();
+renderRanking();
+renderManageTypes();
+renderIconPicker();
+renderColorPicker();
+updateTimers();
+</script>
+</body>
+</html>

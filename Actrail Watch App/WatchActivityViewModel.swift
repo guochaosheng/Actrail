@@ -25,11 +25,13 @@ class WatchActivityViewModel {
     private let syncManager = WatchSyncManager.shared
     private var syncTimer: Timer?
     private var reminderCheckTimer: Timer?
+    private var deliveredCheckTimer: Timer?
     private var reconnectTimer: Timer?
     private var connectingHideTask: Task<Void, Never>?
     private var fetchRetryTask: Task<Void, Never>?
     private var firedReminderKeys: Set<String> = []
     private var reportedReminderKeys: Set<String> = []
+    private var reportedExecutionKeys: Set<String> = []
     private let notificationDelegate = WatchNotificationDelegate()
 
     init() {
@@ -150,7 +152,7 @@ class WatchActivityViewModel {
                 let pending = reminderRequests.count
                 let total = requests.count
                 let formatter = DateFormatter()
-                formatter.dateFormat = "HH:mm"
+                formatter.dateFormat = "MM/dd HH:mm"
                 var scheduleLines: [String] = []
                 for r in reminderRequests.sorted(by: { a, b in
                     let da = (a.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() ?? .distantFuture
@@ -221,6 +223,13 @@ class WatchActivityViewModel {
                 self?.checkDueReminders()
             }
         }
+        // 轮询兜底：每 30 秒反查本机 pending，把后台已投递但无回调的通知补报执行成功
+        deliveredCheckTimer?.invalidate()
+        deliveredCheckTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.reportDeliveredWatchNotifications()
+            }
+        }
     }
 
     private func checkDueReminders() {
@@ -242,6 +251,11 @@ class WatchActivityViewModel {
                 guard !firedReminderKeys.contains(key) else { continue }
                 firedReminderKeys.insert(key)
                 fireReminder()
+                // 到点即视为已执行（回调优先）：软提示 + 上报执行成功
+                let dayKeyString = Self.dayKey(now)
+                let planID = (reminder.plansByDay[dayKeyString] ?? reminder.planID?.uuidString)
+                    .flatMap(UUID.init(uuidString:))
+                reportExecution(reminderID: reminder.id, planID: planID, dayKey: dayKeyString)
                 return
             }
         }
@@ -251,6 +265,67 @@ class WatchActivityViewModel {
         WKInterfaceDevice.current().play(.notification)
     }
 
+    /// 上报执行成功（iWatch 本地通知），同一提醒同一天只上报一次。
+    /// 路径：① 前台系统通知回调 willPresent（onTriggered）；② 到点轮询 checkDueReminders；
+    /// ③ 轮询兜底 reportDeliveredWatchNotifications（后台已投递、无回调时）。
+    private func reportExecution(reminderID: UUID?, planID: UUID?, dayKey: String) {
+        let key = "\(reminderID?.uuidString ?? "nil")-\(dayKey)"
+        guard !reportedExecutionKeys.contains(key) else { return }
+        reportedExecutionKeys.insert(key)
+        logWatchReminder(
+            sentSuccessfully: true,
+            source: "iWatch 本地通知",
+            reminderID: reminderID,
+            planID: planID
+        )
+    }
+
+    /// 轮询兜底：后台投递的通知没有前台回调、无从感知（willPresent/didReceive 均不触发）。
+    /// 反查本机 pending：仅对「确曾排定过」的日子（reportedReminderKeys），
+    /// 若排定时刻已过且对应通知已不在 pending = 系统已投递 → 补上报一次执行成功。
+    private func reportDeliveredWatchNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { [weak self] requests in
+            guard let self else { return }
+            let pendingIDs = Set(requests.map(\.identifier))
+            let now = Date()
+            Task { @MainActor in
+                for reminder in self.reminders where reminder.isEnabled {
+                    for candidate in Self.pastSlotCandidates(for: reminder, before: now) {
+                        let dayKeyString = Self.dayKey(candidate)
+                        let reportKey = "\(reminder.id.uuidString)-\(dayKeyString)"
+                        // 从未排定过的日期（如新增提醒之前的过去日）不属于已投递，跳过，
+                        // 避免把无通知投递的过去时刻误报为执行成功。
+                        guard self.reportedReminderKeys.contains(reportKey) else { continue }
+                        let identifier = "reminder-\(reminder.id.uuidString)-\(dayKeyString)"
+                        guard !pendingIDs.contains(identifier) else { continue }
+                        let planID = (reminder.plansByDay[dayKeyString] ?? reminder.planID?.uuidString)
+                            .flatMap(UUID.init(uuidString:))
+                        self.reportExecution(reminderID: reminder.id, planID: planID, dayKey: dayKeyString)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 生成与排定逻辑一致、时刻已过的时间点（近 5 天窗口），用于判定后台投递。
+    private static func pastSlotCandidates(for reminder: WatchReminder, before now: Date) -> [Date] {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: reminder.date)
+        let minute = calendar.component(.minute, from: reminder.date)
+        let startOfDay = calendar.startOfDay(for: now)
+        var candidates: [Date] = []
+        var day = calendar.date(byAdding: .day, value: -4, to: startOfDay) ?? startOfDay
+        for _ in 0..<5 {
+            if let candidate = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day),
+               candidate <= now {
+                candidates.append(candidate)
+            }
+            day = calendar.date(byAdding: .day, value: 1, to: day) ?? day
+        }
+        return candidates
+    }
+
     // MARK: - Watch Local Notifications
 
     private func setupWatchNotifications() {
@@ -258,12 +333,8 @@ class WatchActivityViewModel {
             Task { @MainActor in
                 let planID = (notification.request.content.userInfo["planID"] as? String).flatMap(UUID.init(uuidString:))
                 let reminderID = Self.reminderID(from: notification.request.identifier)
-                self?.logWatchReminder(
-                    sentSuccessfully: true,
-                    source: "iWatch 本地通知",
-                    reminderID: reminderID,
-                    planID: planID
-                )
+                let dayKey = notification.request.identifier.components(separatedBy: "-").last ?? ""
+                self?.reportExecution(reminderID: reminderID, planID: planID, dayKey: dayKey)
             }
         }
         notificationDelegate.onTapped = { [weak self] response in

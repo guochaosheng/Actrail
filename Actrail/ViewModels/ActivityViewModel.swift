@@ -105,7 +105,19 @@ class ActivityViewModel {
 
         syncManager.onReminderLogReceived = { [weak self] log in
             Task { @MainActor in
-                self?.appendReminderLog(log)
+                guard let self else { return }
+                // iWatch 端上报的执行/确认记录：回调优先合并为对应「iWatch 计划」
+                // 的唯一「执行成功」结算记录（不另生成事件记录，避免两条并存）。
+                var normalized = log
+                if normalized.source == "iWatch 已确认" || normalized.source == "iWatch 本地通知" {
+                    normalized.status = normalized.sentSuccessfully ? "执行成功" : "执行失败"
+                    if normalized.sentSuccessfully, self.settleWatchExecutionReported(normalized) {
+                        return
+                    }
+                } else if normalized.source == "iWatch 计划" && normalized.status.isEmpty {
+                    normalized.status = "计划中"
+                }
+                self.appendReminderLog(normalized)
             }
         }
 
@@ -116,6 +128,14 @@ class ActivityViewModel {
         }
 
         isWatchReachable = syncManager.isReachable
+
+        // 闹钟一响（系统回调状态流）立即为对应闹钟计划追加「执行成功」
+        AlarmKitManager.shared.onAlarmAlerting = { [weak self] alarmID in
+            Task { @MainActor in
+                self?.settleAlarmFired(alarmID: alarmID)
+            }
+        }
+        AlarmKitManager.shared.startAlarmMonitoring()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self else { return }
@@ -362,10 +382,12 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
         for index in reminders.indices where reminders[index].alarmEnabled {
             let reminder = reminders[index]
             DiagnosticLog.append(tag: "AlarmCancel", message: "startActivity 三边取消 id=\(reminder.id.uuidString.prefix(8))")
-            if let alarmID = reminder.scheduledAlarmIDs[todayKey] {
+            let alarmID = reminder.scheduledAlarmIDs[todayKey]
+            let fireTime = alarmID.flatMap { AlarmKitManager.shared.alarmFireTime(id: $0) }
+            if let alarmID {
                 AlarmKitManager.shared.cancelAlarm(id: alarmID)
             }
-            appendCancelledEntries(for: reminder, date: Date())
+            appendCancelledEntries(for: reminder, date: Date(), alarmFireTime: fireTime)
             // 当日排定作废，下次打开时自动续排
             reminders[index].scheduledDates.removeAll { Calendar.current.isDate($0, inSameDayAs: Date()) }
             reminders[index].scheduledAlarmIDs[todayKey] = nil
@@ -629,6 +651,14 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
                 extendReminderSchedules()
             } else {
                 cancelPhoneNotification(for: reminders[index])
+                // 关闭提醒 = 取消全部已排定计划，追加不可变「取消成功」结果记录
+                let plansSnapshot = reminderLogs
+                for log in plansSnapshot where
+                    log.reminderID == reminders[index].id && log.status == "计划中" &&
+                    ["iPhone 计划", "iWatch 计划", "闹钟计划"].contains(log.source) &&
+                    !planResultExists(for: log) {
+                    appendPlanResult(for: log, status: "取消成功")
+                }
             }
             pushRemindersToWatch()
         }
@@ -810,7 +840,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
 
         reminderDelegate.onTriggered = { [weak self] notification in
             DispatchQueue.main.async {
-                self?.logPhoneNotificationFired(notification)
+                self?.settlePhoneNotificationFired(notification)
             }
         }
 
@@ -845,24 +875,33 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
         }
     }
 
-    private func logPhoneNotificationFired(_ notification: UNNotification) {
+    private func settlePhoneNotificationFired(_ notification: UNNotification) {
         let contentObject = notification.request.content
         let presetTime = contentObject.userInfo["presetTime"] as? Date ?? Date()
         let planID = (contentObject.userInfo["planID"] as? String).flatMap(UUID.init(uuidString:))
         let reminderID = (contentObject.userInfo["reminderId"] as? String).flatMap(UUID.init(uuidString:))
-        let content = contentObject.body.isEmpty
-            ? contentObject.title
-            : contentObject.body
-        let entry = ReminderLogEntry(
-            content: content,
-            presetTime: presetTime,
-            sentTime: Date(),
-            sentSuccessfully: true,
-            source: "iPhone 本地通知",
-            reminderID: reminderID,
-            planID: planID
-        )
-        appendReminderLog(entry)
+        // 回调优先：前台投递时立即为对应「iPhone 计划」追加一条「执行成功」结果记录。
+        // 若无匹配的原计划记录（历史数据），合成一条等价的计划记录再结算，保证仍只有一条。
+        let planLog: ReminderLogEntry
+        if let matched = reminderLogs.first(where: {
+            $0.source == "iPhone 计划" &&
+            ($0.id == planID || (planID == nil && $0.reminderID == reminderID)) &&
+            Self.reminderDayKey($0.presetTime) == Self.reminderDayKey(presetTime)
+        }) {
+            planLog = matched
+        } else {
+            planLog = ReminderLogEntry(
+                content: "",
+                presetTime: presetTime,
+                sentTime: Date(),
+                sentSuccessfully: true,
+                source: "iPhone 计划",
+                status: "计划中",
+                reminderID: reminderID,
+                planID: planID
+            )
+        }
+        appendPlanResult(for: planLog, status: "执行成功")
     }
 
     private func appendReminderLog(_ entry: ReminderLogEntry) {
@@ -921,41 +960,86 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
         return (iphone, watch)
     }
 
-    private func appendCancelledEntries(for reminder: ActivityReminder, date: Date) {
+    private func appendCancelledEntries(for reminder: ActivityReminder, date: Date, alarmFireTime: Date? = nil) {
         let time = Self.logDateFormatter.string(from: date)
-        var entries: [ReminderLogEntry] = []
-        if reminder.alarmEnabled {
-            entries.append(ReminderLogEntry(
-                content: "闹钟 \(time) 已取消",
-                presetTime: date,
-                sentTime: Date(),
-                sentSuccessfully: true,
-                source: "闹钟计划",
-                status: "已取消",
-                reminderID: reminder.id
-            ))
+        let alarmAnchor: Date
+        if let fireTime = alarmFireTime {
+            alarmAnchor = fireTime
+        } else {
+            let slotForDay = reminder.scheduledDates.first(where: {
+                Calendar.current.isDate($0, inSameDayAs: date)
+            }) ?? reminderLogs.first(where: {
+                $0.reminderID == reminder.id
+                    && $0.status == "计划中"
+                    && Calendar.current.isDate($0.presetTime, inSameDayAs: date)
+            })?.presetTime ?? date
+            alarmAnchor = Calendar.current.date(
+                byAdding: .minute,
+                value: reminder.alarmGraceMinutes,
+                to: slotForDay
+            ) ?? slotForDay
         }
+        let roundedAnchor = Calendar.current.date(
+            bySettingHour: Calendar.current.component(.hour, from: alarmAnchor),
+            minute: Calendar.current.component(.minute, from: alarmAnchor),
+            second: 0,
+            of: alarmAnchor
+        ) ?? alarmAnchor
+        let alarmTime = Self.logDateFormatter.string(from: roundedAnchor)
+        let alertPreset = Calendar.current.date(
+            byAdding: .minute,
+            value: -reminder.alarmGraceMinutes,
+            to: roundedAnchor
+        ) ?? roundedAnchor
         let iphone = ReminderLogEntry(
-            content: "iPhone 提醒 \(time) 当日作废（已确认活动）",
+            content: "iPhone 计划 \(time) 取消成功（已确认活动，未投递撤销）",
             presetTime: date,
             sentTime: Date(),
             sentSuccessfully: true,
             source: "iPhone 计划",
-            status: "已取消",
+            status: "取消成功",
             reminderID: reminder.id
         )
         let watch = ReminderLogEntry(
-            content: "iWatch 提醒 \(time) 当日作废（已确认活动）",
+            content: "iWatch 计划 \(time) 取消成功（已确认活动，未投递撤销）",
             presetTime: date,
             sentTime: Date(),
             sentSuccessfully: true,
             source: "iWatch 计划",
-            status: "已取消",
+            status: "取消成功",
             reminderID: reminder.id
         )
-        appendReminderLog(iphone)
-        appendReminderLog(watch)
-        entries.forEach { appendReminderLog($0) }
+        let alarm = ReminderLogEntry(
+            content: "闹钟记录 \(alarmTime) 取消成功（已确认活动）",
+            presetTime: alertPreset,
+            sentTime: Date(),
+            sentSuccessfully: true,
+            source: "闹钟计划",
+            status: "取消成功",
+            reminderID: reminder.id
+        )
+        // 对应计划已存在执行成功/执行失败（通知已投递）时不再生成「取消成功」，
+        // 避免与执行结果并存两条矛盾记录。
+        if !planHasExecutionResult("iPhone 计划", reminderID: reminder.id, date: date) {
+            appendReminderLog(iphone)
+        }
+        if !planHasExecutionResult("iWatch 计划", reminderID: reminder.id, date: date) {
+            appendReminderLog(watch)
+        }
+        if reminder.alarmEnabled && !planHasExecutionResult("闹钟计划", reminderID: reminder.id, date: date) {
+            appendReminderLog(alarm)
+        }
+    }
+
+    /// 该提醒当天是否存在「执行成功/执行失败」结果记录。
+    private func planHasExecutionResult(_ source: String, reminderID: UUID?, date: Date) -> Bool {
+        guard let reminderID else { return false }
+        return reminderLogs.contains { candidate in
+            candidate.source == source &&
+            candidate.reminderID == reminderID &&
+            (candidate.status == "执行成功" || candidate.status == "执行失败") &&
+            Calendar.current.isDate(candidate.presetTime, inSameDayAs: date)
+        }
     }
 
     func deleteReminderLog(_ log: ReminderLogEntry) {
@@ -964,14 +1048,17 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     }
 
     /// 撤销某提醒某天的底层调度：AlarmKit 闹钟 + 当天 pending 通知。
-    private func deactivatePlanSlot(reminderID: UUID?, at date: Date) {
+    /// onResult 返回是否真的移除了底层调度（false = 取消失败，无对象可撤）。
+    private func deactivatePlanSlot(reminderID: UUID?, at date: Date, onResult: ((Bool) -> Void)? = nil) {
         let dayKey = Self.reminderDayKey(date)
+        var removedSomething = false
         if let reminderID {
             if let idx = reminders.firstIndex(where: { $0.id == reminderID }),
                let alarmID = reminders[idx].scheduledAlarmIDs[dayKey] {
                 AlarmKitManager.shared.cancelAlarms(ids: [alarmID])
                 reminders[idx].scheduledAlarmIDs.removeValue(forKey: dayKey)
                 ActivityReminder.saveAll(reminders)
+                removedSomething = true
             }
             let identifier = "reminder-\(reminderID.uuidString)-\(dayKey)"
             UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
@@ -980,56 +1067,169 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
                     .map(\.identifier)
                 if !ids.isEmpty {
                     UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+                    removedSomething = true
+                }
+                DispatchQueue.main.async {
+                    onResult?(removedSomething)
                 }
             }
+        } else {
+            onResult?(false)
         }
+    }
+
+    /// 闹钟进入响铃状态时，为匹配该闹钟的「闹钟计划」追加「执行成功」。
+    private func settleAlarmFired(alarmID: UUID) {
+        guard let reminder = reminders.first(where: { $0.scheduledAlarmIDs.values.contains(alarmID) }) else { return }
+        for log in reminderLogs where
+            log.source == "闹钟计划" &&
+            log.status == "计划中" &&
+            log.reminderID == reminder.id &&
+            reminder.scheduledAlarmIDs[Self.reminderDayKey(log.presetTime)] == alarmID &&
+            !planResultExists(for: log) {
+            appendPlanResult(for: log, status: "执行成功")
+        }
+    }
+
+    private func reminderGraceMinutes(for reminderID: UUID?) -> Int {
+        guard let reminderID, let reminder = reminders.first(where: { $0.id == reminderID }) else { return 0 }
+        return reminder.alarmGraceMinutes
+    }
+
+    /// 该闹钟计划的底层闹钟是否已被系统消费（触发时间已过且系统列表中已不存在）。
+    private func alarmSlotConsumed(for log: ReminderLogEntry) -> Bool {
+        guard let reminder = reminders.first(where: { $0.id == log.reminderID }) else { return false }
+        guard let alarmID = reminder.scheduledAlarmIDs[Self.reminderDayKey(log.presetTime)] else { return false }
+        guard let alarms = AlarmKitManager.shared.queryAlarms() else { return false }
+        return !alarms.contains { $0.id == alarmID }
+    }
+
+    /// 计划结果状态：取消/执行操作的落地标记（不修改原「计划中」记录，只追加新记录）
+    private static let planResultStatuses: Set<String> = ["取消成功", "取消失败", "执行成功", "执行失败"]
+
+    private func planResultExists(for log: ReminderLogEntry) -> Bool {
+        reminderLogs.contains { candidate in
+            candidate.reminderID == log.reminderID &&
+            candidate.source == log.source &&
+            candidate.planID == log.planID &&
+            Self.planResultStatuses.contains(candidate.status)
+        }
+    }
+
+    /// 回调优先：iWatch 上报执行/确认时，立即合并为对应「iWatch 计划」的唯一执行成功，
+    /// 不生成「iWatch 本地通知」事件记录。返回能否匹配到原计划；匹配不到才降级保留事件记录。
+    private func settleWatchExecutionReported(_ log: ReminderLogEntry) -> Bool {
+        let planLog = reminderLogs.first { candidate in
+            guard candidate.source == "iWatch 计划" && candidate.status == "计划中" else { return false }
+            if let pid = log.planID, let cpid = candidate.planID { return pid == cpid }
+            if let rid = log.reminderID, candidate.reminderID == rid {
+                return Self.reminderDayKey(candidate.presetTime) == Self.reminderDayKey(log.presetTime)
+            }
+            return false
+        }
+        guard let planLog else { return false }
+        appendPlanResult(for: planLog, status: "执行成功")
+        return true
+    }
+
+    private func appendPlanResult(for log: ReminderLogEntry, status: String) {
+        // 幂等：同一计划只允许一条结果记录（回调与轮询兜底并发时也不会产生两条）
+        guard !planResultExists(for: log) else { return }
+        let displayDate: Date
+        if log.source == "闹钟计划",
+           let grace = reminders.first(where: { $0.id == log.reminderID })?.alarmGraceMinutes {
+            displayDate = Calendar.current.date(byAdding: .minute, value: grace, to: log.presetTime) ?? log.presetTime
+        } else {
+            displayDate = log.presetTime
+        }
+        let time = Self.logDateFormatter.string(from: displayDate)
+        let cancelled = status == "取消成功" || status == "取消失败"
+        let executed = status == "执行成功" || status == "执行失败"
+        let note: String
+        if cancelled {
+            note = log.source == "闹钟计划" ? "闹钟已撤销" : "提醒已撤销"
+        } else if executed {
+            note = "通知/提醒已发出"
+        } else {
+            note = ""
+        }
+        appendReminderLog(ReminderLogEntry(
+            content: "\(log.source) \(time) \(status)（\(note)）",
+            presetTime: log.presetTime,
+            sentTime: Date(),
+            sentSuccessfully: status != "取消失败" && status != "执行失败",
+            source: log.source,
+            status: status,
+            reminderID: log.reminderID,
+            planID: log.planID
+        ))
     }
 
     private func markExpiredPlans() {
         let now = Date()
-        // 是否有进行中活动：有活动 = 已确认提醒目的达成 → 三条全取消；
+        // 是否有进行中活动：有活动 = 已确认提醒目的达成 → 三条全部取消；
         // 无活动 = 保留闹钟（让 n 分钟后闹钟再强烈提醒），iPhone/iWatch
-        // 计划按「通知是否实际发出」区分为「已过期」（发出过）或「已取消」（未发出被撤销）
+        // 计划按「通知是否实际发出」区分为「执行成功」（发出过）或「取消成功」（未发出被撤销）。
+        // 已生成的「计划中」记录不再更新状态，操作结果一律追加为新的结果记录。
+        // iPhone/闹钟计划的「执行成功」为「回调优先 + 轮询兜底」：前台投递/响铃时
+        // 立即由回调结算；后台投递时由本轮询结算。appendPlanResult 幂等，同一计划始终只有一条结果。
         let hasActive = activeRecords.contains { $0.isActive }
-        var changed = false
-        for index in reminderLogs.indices {
-            guard reminderLogs[index].status == "计划中" else { continue }
-            let source = reminderLogs[index].source
-            let isPhoneOrWatch = source == "iPhone 计划" || source == "iWatch 计划"
+        let plansSnapshot = reminderLogs
+        for log in plansSnapshot {
+            guard log.status == "计划中" else { continue }
+            let source = log.source
             let isAlarm = source == "闹钟计划"
-            guard isPhoneOrWatch || isAlarm else { continue }
-            guard now > reminderLogs[index].presetTime else { continue }
+            guard source == "iPhone 计划" || source == "iWatch 计划" || isAlarm else { continue }
+            guard now > log.presetTime else { continue }
+            guard !planResultExists(for: log) else { continue }
+
             if isAlarm {
-                // 无活动时保留闹钟计划，让 n 分钟后闹钟强烈提醒
-                if !hasActive { continue }
-                reminderLogs[index].status = "已取消"
-                // 真正撤销当天已排定的 AlarmKit 闹钟与 pending 通知
-                deactivatePlanSlot(reminderID: reminderLogs[index].reminderID, at: reminderLogs[index].presetTime)
-            } else if hasActive {
-                reminderLogs[index].status = "已取消"
-                deactivatePlanSlot(reminderID: reminderLogs[index].reminderID, at: reminderLogs[index].presetTime)
-            } else {
-                // 无活动：按通知是否实际发出区分（优先 planID 精确匹配，缺省回退到时间窗口）
-                let delivered = reminderLogs.contains { log in
-                    let s = log.source
-                    guard s == "iPhone 本地通知" || s == "iWatch 本地通知" ||
-                          s == "iPhone 已确认" || s == "iWatch 已确认" else { return false }
-                    if let pid = reminderLogs[index].planID, let logPid = log.planID {
-                        return pid == logPid
+                // 无活动时保留闹钟计划，让 n 分钟后闹钟强烈提醒；
+                // 若闹钟触发时间已过且系统已无该闹钟（已响并被消费）→ 追加「执行成功」。
+                if !hasActive {
+                    let fireDate = log.presetTime.addingTimeInterval(
+                        TimeInterval(reminderGraceMinutes(for: log.reminderID) * 60)
+                    )
+                    guard now > fireDate else { continue }
+                    if alarmSlotConsumed(for: log) {
+                        appendPlanResult(for: log, status: "执行成功")
                     }
-                    return abs(log.presetTime.timeIntervalSince(reminderLogs[index].presetTime)) < 120
+                    continue
                 }
-                reminderLogs[index].status = delivered ? "已过期" : "已取消"
-                // 未实际发出的 iPhone/iWatch 计划可能残留底层 pending 通知，一并撤销
-                if !delivered {
-                    deactivatePlanSlot(reminderID: reminderLogs[index].reminderID, at: reminderLogs[index].presetTime)
+                deactivatePlanSlot(reminderID: log.reminderID, at: log.presetTime) { ok in
+                    self.appendPlanResult(for: log, status: ok ? "取消成功" : "取消失败")
+                }
+            } else if source == "iWatch 计划" {
+                // iWatch 计划的「执行成功」在收到 watch 上报（iWatch 本地通知/已确认）时
+                // 即时合并为唯一结算记录（settleWatchExecutionReported，回调优先）；
+                // iPhone 无法反查手表端 pending，无独立轮询结算，此处只处理活动确认导致的取消。
+                // 未上报前保持「计划中」等待。
+                if hasActive {
+                    // 已确认活动目的达成：取消意图已同步给 iWatch（pushRemindersToWatch），
+                    // iPhone 无法直接撤销手表端通知，故按意图取消记录为「取消成功」。
+                    appendPlanResult(for: log, status: "取消成功")
+                }
+            } else {
+                // iPhone 计划：回调已在前台投递时优先结算（见 settlePhoneNotificationFired）；
+                // 此处为轮询兜底（后台投递无回调）：pending 反查判定实际投递——
+                // slot 到点且仍在 pending = 未投递 → 撤销 → 取消成功/取消失败；
+                // slot 到点且不在 pending = 通知已成功发出 → 补「执行成功」。
+                // 已投递的判定优先于 hasActive：投递是事实，即使存在进行中活动
+                // 也应记「执行成功」，避免已收到的通知反而记成「取消成功」。
+                let identifier = "reminder-\(log.reminderID?.uuidString ?? "nil")-\(Self.reminderDayKey(log.presetTime))"
+                UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+                    let stillPending = requests.contains { $0.identifier == identifier }
+                    DispatchQueue.main.async {
+                        if stillPending {
+                            self.deactivatePlanSlot(reminderID: log.reminderID, at: log.presetTime) { ok in
+                                self.appendPlanResult(for: log, status: ok ? "取消成功" : "取消失败")
+                            }
+                        } else {
+                            self.appendPlanResult(for: log, status: "执行成功")
+                        }
+                    }
                 }
             }
-            reminderLogs[index].sentTime = now
-            changed = true
-        }
-        if changed {
-            ReminderLogEntry.saveAll(reminderLogs)
         }
     }
 
@@ -1040,6 +1240,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             sentTime: Date(),
             sentSuccessfully: true,
             source: "iPhone 已确认",
+            status: "执行成功",
             reminderID: reminderID,
             planID: planID
         )
@@ -1218,7 +1419,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     private func appendAlarmPlan(reminder: ActivityReminder, alarmDate: Date, slotDate: Date) {
         let f = DateFormatter()
         f.dateFormat = "MM/dd HH:mm"
-        let content = "闹钟已排定 \(f.string(from: alarmDate))（+\(reminder.alarmGraceMinutes) 分钟）"
+        let content = "闹钟已排定 \(f.string(from: alarmDate))"
         DispatchQueue.main.async {
             self.appendReminderLog(ReminderLogEntry(
                 content: content,

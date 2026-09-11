@@ -66,7 +66,7 @@ final class AlarmKitManager {
 
     private func makeConfiguration(date: Date, reminderId: String, alarmSound: String = "default") async throws -> AlarmManager.AlarmConfiguration<ActrailAlarmMetadata> {
         let alert = AlarmPresentation.Alert(
-            title: "行迹闹钟",
+            title: "请检查当前正在进行的活动是否正确",
             stopButton: AlarmButton(text: "停止", textColor: .white, systemImageName: "stop")
         )
         let metadata = ActrailAlarmMetadata(reminderId: reminderId)
@@ -119,6 +119,31 @@ final class AlarmKitManager {
         try? alarmManager.stop(id: id)
     }
 
+    /// 闹钟进入响铃状态（.alerting）时回调对应的闹钟 id。
+    var onAlarmAlerting: ((UUID) -> Void)?
+
+    private var isMonitoringAlarms = false
+
+    /// 监听系统闹钟状态流：一旦某闹钟 state 变为 .alerting（正在响铃）即回调。
+    func startAlarmMonitoring() {
+        guard !isMonitoringAlarms else { return }
+        isMonitoringAlarms = true
+        Task { [weak self] in
+            guard let self else { return }
+            var previous: [UUID: Alarm.State] = [:]
+            for await alarms in self.alarmManager.alarmUpdates {
+                var current: [UUID: Alarm.State] = [:]
+                for alarm in alarms {
+                    current[alarm.id] = alarm.state
+                    if alarm.state == .alerting && previous[alarm.id] != .alerting {
+                        self.onAlarmAlerting?(alarm.id)
+                    }
+                }
+                previous = current
+            }
+        }
+    }
+
     /// 查询系统实际排定的闹钟。返回 nil 表示系统查询失败，空数组表示无排定。
     func queryAlarms() -> [Alarm]? {
         do {
@@ -129,5 +154,15 @@ final class AlarmKitManager {
             DiagnosticLog.append(tag: "AlarmKitAPI", message: "queryAlarms 失败: \(error)")
             return nil
         }
+    }
+
+    /// 查询某个闹钟的实际触发时间。
+    func alarmFireTime(id: UUID) -> Date? {
+        guard let alarms = queryAlarms() else { return nil }
+        guard let alarm = alarms.first(where: { $0.id == id }) else { return nil }
+        if case .fixed(let date)? = alarm.schedule {
+            return date
+        }
+        return nil
     }
 }

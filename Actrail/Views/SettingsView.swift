@@ -81,114 +81,55 @@ Section("开发者") {
 
 struct DebugView: View {
     var viewModel: ActivityViewModel
-    @State private var notificationAuthorized = false
-    @State private var notificationAuthText = "未知"
-    @State private var pendingCountText = "—"
-    @State private var alarmKitAuthText = "未知"
-    @State private var diagLogs: [DiagnosticLogEntry] = []
     @State private var iphonePendingStatus = ""
     @State private var alarmKitScheduledStatus = ""
     @State private var alarmList: [(id: UUID, timeText: String)] = []
 
-    @State private var showClearConfirm = false
     @State private var showResetConfirm = false
-
-    @State private var wakeLogStore = WakeLogStore.shared
-    private let wakeLogTimer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     var body: some View {
         List {
+            Section {
+                ForEach(viewModel.reminderLogGroups()) { group in
+                    NavigationLink {
+                        ReminderPlansListView(
+                            group: group,
+                            reminders: viewModel.reminders,
+                            deleteLog: { viewModel.deleteReminderLog($0) }
+                        )
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(group.displayID)
+                                .font(.caption)
+                                .monospaced()
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                            Text(group.reminderLabel)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                        }
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("提醒事件")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(viewModel.reminderLogs.count) 条")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
             Section("iWatch 提醒") {
                 Button("测试：手表立即提醒") {
                     viewModel.testReminderOnWatch()
-                }
-            }
-
-            Section("表盘同步") {
-                Button("自动测试表盘同步") {
-                    viewModel.runAutoTestSequence()
-                }
-                Text("依次执行：全停 → 开始 1 个 → 全停 → 开始 1 个 → 全停（每步间隔 3 秒），用于观察表盘是否随 iPhone 即时变化。")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            Section("iWatch 连接状态") {
-                Text(viewModel.watchSessionStatus)
-                    .font(.system(size: 11, design: .monospaced))
-                Text("watchApp 已安装 = false 时，iPhone→iWatch 主动推送（sendMessage/表盘通道）会全部失败（WCError 7006），表盘只能等 iWatch app 打开后轮询")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            Section("iWatch 系统调度唤醒日志") {
-                Button("刷新") {
-                    viewModel.requestWatchWakeLog()
-                }
-                if wakeLogStore.entries.isEmpty {
-                    Text("暂无日志，等待自动推送或点击刷新")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    let lines = Array(wakeLogStore.entries.reversed().prefix(80))
-                    ForEach(lines) { entry in
-                        HStack(alignment: .top, spacing: 6) {
-                            Text(formatWakeTime(entry.t))
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
-                            Text(entry.msg)
-                                .font(.system(size: 11))
-                            Spacer(minLength: 0)
-                        }
-                    }
-                    Button("清除日志", role: .destructive) {
-                        WakeLogStore.shared.clear()
-                    }
-                }
-                Text("iWatch 端唤醒/拉取/写表盘事件由手表每 2 秒自动推送，这里每 3 秒自动刷新一次（最新在前，最多 300 条）")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            .onReceive(wakeLogTimer) { _ in
-                if !WakeLogStore.shared.entries.isEmpty {
-                    viewModel.requestWatchWakeLog()
-                }
-            }
-
-            Section("通知状态") {
-                HStack {
-                    Text("通知授权")
-                    Spacer()
-                    Text(notificationAuthText)
-                        .foregroundColor(notificationAuthorized ? .green : .red)
-                        .font(.caption)
-                }
-                HStack {
-                    Text("已保存提醒")
-                    Spacer()
-                    Text("\(viewModel.reminders.count) 条")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                HStack {
-                    Text("待处理通知")
-                    Spacer()
-                    Text(pendingCountText)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Button("重排所有提醒") {
-                    viewModel.rescheduleAllPhoneNotificationsPublic()
-                    refreshNotificationStatus()
-                }
-                Button("查询手表通知状态") {
-                    viewModel.requestWatchStatus()
-                }
-                if !viewModel.watchStatusString.isEmpty {
-                    Text(viewModel.watchStatusString)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .textSelection(.enabled)
                 }
             }
 
@@ -237,140 +178,19 @@ struct DebugView: View {
             }
 
             Section("开发者") {
-                Button("清空记录提醒与提醒历史", role: .destructive) {
-                    showClearConfirm = true
-                }
-                .confirmationDialog("将清空所有记录提醒与提醒历史（含已排定闹钟），此操作不可恢复", isPresented: $showClearConfirm, titleVisibility: .visible) {
-                    Button("清空", role: .destructive) {
-                        viewModel.clearRemindersAndLogs()
-                        refreshNotificationStatus()
-                    }
-                    Button("取消", role: .cancel) {}
-                }
                 Button("应用初始化重置", role: .destructive) {
                     showResetConfirm = true
                 }
                 .confirmationDialog("将删除 iPhone / iWatch / 闹钟排定计划、记录提醒、提醒历史、全部活动历史记录，活动类型恢复默认，正在进行活动全部清除，此操作不可恢复", isPresented: $showResetConfirm, titleVisibility: .visible) {
                     Button("重置", role: .destructive) {
                         viewModel.resetAllAppData()
-                        refreshNotificationStatus()
                     }
                     Button("取消", role: .cancel) {}
                 }
             }
-
-            Section("闹钟诊断 (AlarmKit)") {
-                HStack {
-                    Text("AlarmKit 授权")
-                    Spacer()
-                    Text(alarmKitAuthText)
-                        .foregroundColor(alarmKitAuthText == "已授权" ? .green : .red)
-                        .font(.caption)
-                }
-                // 显示已保存的提醒列表
-                ForEach(viewModel.reminders) { reminder in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(reminder.timeString)
-                                .font(.body.monospacedDigit())
-                            Spacer()
-                            let alarmLog = viewModel.reminderLogs.first(where: {
-                                $0.reminderID == reminder.id && $0.source == "闹钟计划"
-                            })
-                            if let log = alarmLog {
-                                Text(log.status == "已取消" ? "已取消" : "计划中")
-                                    .font(.caption2)
-                                    .foregroundColor(log.status == "已取消" ? .gray : .orange)
-                            } else if reminder.alarmEnabled {
-                                Text("待排定")
-                                    .font(.caption2)
-                                    .foregroundColor(.yellow)
-                            }
-                            if reminder.alarmEnabled {
-                                Text("闹钟+\(reminder.alarmGraceMinutes)分")
-                                    .font(.caption2)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                        Text("ID: \(reminder.id.uuidString.prefix(8))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                // 显示闹钟相关的历史记录
-                let alarmLogs = viewModel.reminderLogs.filter {
-                    $0.source.contains("闹钟")
-                }
-                if !alarmLogs.isEmpty {
-                    Divider()
-                    Text("闹钟历史记录")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    ForEach(alarmLogs) { log in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(log.source)
-                                    .font(.caption2)
-                                    .foregroundColor(.blue)
-                                if !log.status.isEmpty {
-                                    Text(log.status)
-                                        .font(.caption2)
-                                        .foregroundColor(log.status == "已取消" ? .gray : .blue)
-                                }
-                            }
-                            Text(log.content)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-            }
-
-            Section("闹钟操作日志（持久化）") {
-                if diagLogs.isEmpty {
-                    Text("暂无日志")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(diagLogs) { entry in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(entry.tag)
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.orange)
-                                Spacer()
-                                Text(formatDiagTime(entry.timestamp))
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                            Text(entry.message)
-                                .font(.caption2)
-                            if !entry.callStack.isEmpty {
-                                Text(entry.callStack)
-                                    .font(.system(size: 8, design: .monospaced))
-                                    .foregroundColor(.gray)
-                                    .lineLimit(3)
-                            }
-                        }
-                    }
-                    Button("清除日志") {
-                        DiagnosticLog.clear()
-                        diagLogs = []
-                    }
-                    .foregroundColor(.red)
-                }
-            }
-            .onAppear {
-                diagLogs = DiagnosticLog.load()
-            }
         }
         .navigationTitle("调试")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            refreshNotificationStatus()
-            refreshAlarmKitStatus()
-        }
     }
 
     private func queryiPhonePendingStatus() {
@@ -476,57 +296,181 @@ struct DebugView: View {
         @unknown default: return "未知"
         }
     }
+}
 
-    private func refreshNotificationStatus() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            DispatchQueue.main.async {
-                switch settings.authorizationStatus {
-                case .authorized, .provisional, .ephemeral:
-                    self.notificationAuthorized = true
-                    self.notificationAuthText = "已授权"
-                case .notDetermined:
-                    self.notificationAuthorized = false
-                    self.notificationAuthText = "未请求"
-                case .denied:
-                    self.notificationAuthorized = false
-                    self.notificationAuthText = "已拒绝"
-                @unknown default:
-                    self.notificationAuthorized = false
-                    self.notificationAuthText = "未知"
+struct ReminderPlansListView: View {
+    let group: ReminderLogGroup
+    let reminders: [ActivityReminder]
+    let deleteLog: (ReminderLogEntry) -> Void
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(group.sections.sorted { a, b in
+                    (a.kind == .other ? 1 : 0) < (b.kind == .other ? 1 : 0)
+                }) { kindSection in
+                    NavigationLink {
+                        KindDetailView(
+                            title: "\(group.displayID) · \(kindSection.kind.title)",
+                            kindSection: kindSection,
+                            reminders: reminders,
+                            deleteLog: deleteLog
+                        )
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: kindSection.kind.icon)
+                                .foregroundColor(.blue)
+                                .frame(width: 22)
+                            Text(kindSection.kind.title)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            let total = kindSection.rows.reduce(0) { $0 + $1.logs.count }
+                            Text("\(total) 条")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            if kindSection.kind == .other {
+                                Text(kindSection.rows.first?.finalStatus ?? "")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("\(kindSection.rows.count) 个时段")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
                 }
             }
         }
-        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
-            DispatchQueue.main.async {
-                self.pendingCountText = "\(requests.count) 条"
+        .navigationTitle(group.displayID)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct KindDetailView: View {
+    let title: String
+    let kindSection: ReminderLogKindSection
+    let reminders: [ActivityReminder]
+    let deleteLog: (ReminderLogEntry) -> Void
+
+    var body: some View {
+        List {
+            ForEach(kindSection.rows) { section in
+                NavigationLink {
+                    ReminderPlanDetailView(
+                        title: section.kind == .other ? "其它事件" : "\(section.kind.title) · \(section.slotLabel)",
+                        logs: section.logs,
+                        reminders: reminders,
+                        deleteLog: deleteLog
+                    )
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock")
+                            .foregroundColor(.blue)
+                            .frame(width: 22)
+                        Text(section.slotLabel)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("\(section.logs.count) 条")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(section.finalStatus)
+                            .font(.caption)
+                            .foregroundColor(section.logs.contains { !$0.sentSuccessfully } ? .red : .secondary)
+                    }
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
             }
         }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .listStyle(.plain)
     }
+}
 
-    private func refreshAlarmKitStatus() {
-        let manager = AlarmKitManager.shared
-        switch manager.authorizationState {
-        case .authorized:
-            alarmKitAuthText = "已授权"
-        case .denied:
-            alarmKitAuthText = "已拒绝"
-        case .notDetermined:
-            alarmKitAuthText = "未请求"
-        @unknown default:
-            alarmKitAuthText = "未知"
+struct ReminderPlanDetailView: View {
+    let title: String
+    let logs: [ReminderLogEntry]
+    let reminders: [ActivityReminder]
+    let deleteLog: (ReminderLogEntry) -> Void
+
+    var body: some View {
+        List {
+            ForEach(logs) { log in
+                ReminderPlanLogRow(log: log, reminders: reminders)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            deleteLog(log)
+                        } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
+            }
         }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
+}
 
-    private func formatDiagTime(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
-        return f.string(from: date)
-    }
+private struct ReminderPlanLogRow: View {
+    let log: ReminderLogEntry
+    let reminders: [ActivityReminder]
 
-    private func formatWakeTime(_ date: Date) -> String {
+    private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
-        return f.string(from: date)
+        f.dateFormat = "MM/dd HH:mm:ss"
+        return f
+    }()
+
+    private static let presetFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm"
+        return f
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(log.content)
+                .font(.subheadline)
+            HStack {
+                if log.source == "闹钟计划",
+                   let reminder = reminders.first(where: { $0.id == log.reminderID }) {
+                    let grace = reminder.alarmGraceMinutes
+                    let calendar = Calendar.current
+                    let slot = reminder.scheduledDates.first(where: {
+                        calendar.isDate($0, inSameDayAs: log.presetTime)
+                    }) ?? calendar.date(
+                        bySettingHour: calendar.component(.hour, from: log.presetTime),
+                        minute: calendar.component(.minute, from: log.presetTime),
+                        second: 0,
+                        of: log.presetTime
+                    ) ?? log.presetTime
+                    Text("提醒预设 \(Self.presetFormatter.string(from: slot)) 稍后提醒间隔预设 \(grace) 分钟，发出 \(Self.timeFormatter.string(from: log.sentTime))")
+                } else {
+                    Text("预设 \(Self.timeFormatter.string(from: log.presetTime))")
+                    Text("·")
+                    Text("发出 \(Self.timeFormatter.string(from: log.sentTime))")
+                }
+            }
+            .font(.caption2)
+            .foregroundColor(.secondary)
+            HStack {
+                Text(log.source)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(log.status.isEmpty ? (log.sentSuccessfully ? "成功" : "失败") : log.status)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(log.sentSuccessfully ? (["已取消", "取消成功"].contains(log.status) ? .gray : .green) : .red)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
