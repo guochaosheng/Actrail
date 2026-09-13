@@ -11,46 +11,37 @@ struct ActrailWatchComplicationEntryView: View {
     var body: some View {
         switch family {
         case .accessoryCircular:
-            Gauge(value: Double(entry.totalMinutes), in: 0...600) {
-                Image(systemName: "timer")
-            } currentValueLabel: {
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.orange, lineWidth: 2)
                 Text("\(entry.totalMinutes)")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.7)
             }
-            .gaugeStyle(.accessoryCircular)
             .widgetLabel {
-                Text("\(entry.totalMinutes)m")
+                Text("\(entry.totalMinutes)")
             }
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                Text("今日活动时长")
-                    .font(.system(size: 10))
+                Text("\(entry.totalMinutes)")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
                     .minimumScaleFactor(0.8)
-                HStack(spacing: 6) {
-                    Text("\(entry.totalMinutes)分钟")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .minimumScaleFactor(0.8)
-                    if entry.activeCount > 0 {
-                        Text("进行中 \(entry.activeCount) 个")
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundColor(.orange)
-                            .minimumScaleFactor(0.7)
-                    }
-                }
             }
         case .accessoryInline:
-            Text("\(entry.totalMinutes)分钟")
-        case .accessoryCorner:
             Text("\(entry.totalMinutes)")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .widgetLabel {
-                    Gauge(value: Double(entry.totalMinutes), in: 0...600) {
-                        Image(systemName: "timer")
-                    }
-                    .gaugeStyle(.accessoryCircularCapacity)
-                }
+        case .accessoryCorner:
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.orange, lineWidth: 2)
+                Text("\(entry.totalMinutes)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.7)
+            }
+            .widgetLabel {
+                Text("\(entry.totalMinutes)")
+            }
         default:
-            Text("\(entry.totalMinutes)m")
+            Text("\(entry.totalMinutes)")
         }
     }
 }
@@ -142,27 +133,29 @@ struct ActiveCountComplicationEntryView: View {
                     .minimumScaleFactor(0.7)
             }
             .widgetLabel {
-                Text("进行中")
+                Text("\(entry.activeCount)")
             }
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 1) {
-                Text("进行中活动数")
-                    .font(.system(size: 10))
-                    .minimumScaleFactor(0.8)
-                Text("\(entry.activeCount) 个")
+                Text("\(entry.activeCount)")
                     .font(.system(size: 17, weight: .bold, design: .rounded))
                     .foregroundColor(.orange)
                     .minimumScaleFactor(0.8)
             }
         case .accessoryInline:
-            Text("进行中 \(entry.activeCount) 个")
-        case .accessoryCorner:
             Text("\(entry.activeCount)")
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundColor(.orange)
-                .widgetLabel {
-                    Text("进行中")
-                }
+        case .accessoryCorner:
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.orange, lineWidth: 2)
+                Text("\(entry.activeCount)")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.orange)
+                    .minimumScaleFactor(0.7)
+            }
+            .widgetLabel {
+                Text("\(entry.activeCount)")
+            }
         default:
             Text("\(entry.activeCount)")
         }

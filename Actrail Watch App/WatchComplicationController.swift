@@ -11,8 +11,8 @@ final class WatchComplicationController: NSObject, CLKComplicationDataSource {
         let totalMinutes: Int
     }
 
-    static let activeCountKind = "ActiveCount"
-    static let todayMinutesKind = "TodayMinutes"
+    static let activeCountKind = "ActiveCountV2"
+    static let todayMinutesKind = "TodayMinutesV2"
 
     private func snapshot() -> Snapshot {
         guard let ud = UserDefaults(suiteName: AppGroupConstant.suiteName) else {
@@ -49,27 +49,23 @@ final class WatchComplicationController: NSObject, CLKComplicationDataSource {
         case .modularSmall:
             return CLKComplicationTemplateModularSmallSimpleText(textProvider: text("\(value)"))
         case .utilitarianSmall:
-            let label = showActive ? "\(value)个" : "\(value)分钟"
-            return CLKComplicationTemplateUtilitarianSmallFlat(textProvider: text(label))
+            return CLKComplicationTemplateUtilitarianSmallFlat(textProvider: text("\(value)"))
         case .circularSmall:
             return CLKComplicationTemplateCircularSmallSimpleText(textProvider: text("\(value)"))
         case .graphicCorner:
             let inner = CLKSimpleTextProvider(text: "\(value)")
             inner.tintColor = .orange
-            return CLKComplicationTemplateGraphicCornerStackText(innerTextProvider: inner, outerTextProvider: text(showActive ? "进行中" : "今日分钟"))
+            return CLKComplicationTemplateGraphicCornerStackText(innerTextProvider: inner, outerTextProvider: text(""))
         case .graphicCircular:
-            let center = showActive ? text("\(value)个") : text("\(value)m")
+            let center = text("\(value)")
             center.tintColor = .orange
             let gauge = CLKSimpleGaugeProvider(style: .fill, gaugeColor: showActive ? .orange : .green, fillFraction: 0)
-            return CLKComplicationTemplateGraphicCircularOpenGaugeSimpleText(
+            return CLKComplicationTemplateGraphicCircularClosedGaugeText(
                 gaugeProvider: gauge,
-                bottomTextProvider: text(showActive ? "进行中" : "时长"),
                 centerTextProvider: center
             )
         case .graphicRectangular:
-            let header = text(showActive ? "进行中活动数" : "今日活动时长")
-            let body = text(showActive ? "\(value) 个" : "\(value) 分钟")
-            return CLKComplicationTemplateGraphicRectangularStandardBody(headerTextProvider: header, body1TextProvider: body, body2TextProvider: CLKSimpleTextProvider(text: ""))
+            return CLKComplicationTemplateGraphicRectangularStandardBody(headerTextProvider: text(""), body1TextProvider: text("\(value)"), body2TextProvider: CLKSimpleTextProvider(text: ""))
         default:
             return nil
         }
@@ -81,12 +77,12 @@ final class WatchComplicationController: NSObject, CLKComplicationDataSource {
         handler([
             CLKComplicationDescriptor(
                 identifier: Self.activeCountKind,
-                displayName: "CLK 进行中活动数 (CLK)",
+                displayName: "进行中活动数",
                 supportedFamilies: [.modularSmall, .utilitarianSmall, .circularSmall, .graphicCorner, .graphicCircular, .graphicRectangular]
             ),
             CLKComplicationDescriptor(
                 identifier: Self.todayMinutesKind,
-                displayName: "CLK 今日活动时长 (CLK)",
+                displayName: "今日活动时长",
                 supportedFamilies: [.modularSmall, .utilitarianSmall, .circularSmall, .graphicCorner, .graphicCircular, .graphicRectangular]
             ),
         ])
