@@ -1,5 +1,8 @@
 # Xcode
 build/
+build-device/
+build-sim/
+build-*/
 *.pbxuser
 !default.pbxuser
 *.mode1v3

@@ -7,6 +7,9 @@ struct ActrailApp: App {
     @State private var viewModel = ActivityViewModel()
     @State private var syncManager = WatchSyncManager.shared
 
+    @AppStorage(AppSettings.accentColorKey) private var accentColorHex = AppSettings.defaultAccentColorHex
+    @AppStorage(AppSettings.colorSchemeKey) private var colorSchemeMode = "system"
+
     private var modelContainer: ModelContainer = {
         let schema = Schema([ActivityType.self, ActivityRecord.self])
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -43,6 +46,8 @@ struct ActrailApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: viewModel)
+                .tint(Color(hex: accentColorHex))
+                .preferredColorScheme(colorSchemeMode == "light" ? .light : colorSchemeMode == "dark" ? .dark : nil)
                 .onOpenURL { url in
                     // 调试通道：actrail://debug?stop=1 或 actrail://debug?add=1
                     UserDefaults.standard.set(url.absoluteString, forKey: "DebugLastURL")

@@ -12,14 +12,14 @@ struct MainTabView: View {
                     Label("活动", systemImage: "timer")
                 }
 
-            ActivityListView(viewModel: viewModel)
-                .tabItem {
-                    Label("历史", systemImage: "calendar")
-                }
-
             StatisticsView(viewModel: viewModel)
                 .tabItem {
                     Label("统计", systemImage: "chart.pie")
+                }
+
+            ReminderView(viewModel: viewModel)
+                .tabItem {
+                    Label("提醒", systemImage: "bell")
                 }
 
             SettingsView(viewModel: viewModel)

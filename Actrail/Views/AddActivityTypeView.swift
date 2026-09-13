@@ -73,18 +73,6 @@ struct AddActivityTypeView: View {
                     }
                     .padding(.vertical)
                 }
-                
-                Section {
-                    Button(action: saveActivity) {
-                        HStack {
-                            Spacer()
-                            Text("保存")
-                                .fontWeight(.bold)
-                            Spacer()
-                        }
-                    }
-                    .disabled(name.isEmpty)
-                }
             }
             .navigationTitle("添加活动类型")
             .navigationBarTitleDisplayMode(.inline)
@@ -93,6 +81,12 @@ struct AddActivityTypeView: View {
                     Button("取消") {
                         dismiss()
                     }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("保存") {
+                        saveActivity()
+                    }
+                    .disabled(name.isEmpty)
                 }
             }
         }

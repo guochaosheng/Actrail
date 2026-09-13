@@ -32,6 +32,7 @@ class ActivityViewModel {
     var reminders: [ActivityReminder] = []
     var reminderLogs: [ReminderLogEntry] = []
     var selectedDate: Date = Date()
+    var selectedCalendarDate: Date? = nil
     var isWatchReachable = false
     var watchStatusString = "尚未查询"
 
@@ -81,6 +82,8 @@ class ActivityViewModel {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.isAppReady = true
         }
+
+        performAutoBackupIfNeeded()
     }
 
     private func flag(_ key: String) -> Bool {
@@ -313,7 +316,8 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     func fetchTodayRecords() {
         guard let context = modelContext else { return }
         let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: Date())
+        let targetDate = selectedCalendarDate ?? Date()
+        let startOfDay = calendar.startOfDay(for: targetDate)
         let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
 
         let predicate = #Predicate<ActivityRecord> { record in
@@ -766,6 +770,182 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
         rebuildCache()
         pushRemindersToWatch()
         sendSync()
+    }
+
+    // MARK: - 设置：启动通知开关
+
+    /// 全量取消 iPhone 排定中的「reminder-」前缀通知。
+    private func cancelAllPendingReminderNotifications() {
+        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+            let ids = requests
+                .filter { $0.identifier.hasPrefix("reminder-") }
+                .map(\.identifier)
+            if !ids.isEmpty {
+                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+            }
+        }
+    }
+
+    /// 全量取消本 app 的 AlarmKit 闹钟并清空注册表。
+    private func cancelAllScheduledAlarms() {
+        let ids = Set(reminders.flatMap { $0.scheduledAlarmIDs.values }.map(\.uuidString))
+            .union(AlarmKitManager.shared.registeredAlarmIDs().map(\.uuidString))
+            .sorted()
+            .compactMap(UUID.init(uuidString:))
+        AlarmKitManager.shared.cancelAlarms(ids: ids)
+        AlarmKitManager.shared.clearAlarmRegistry()
+    }
+
+    /// 启动通知关闭：撤销 iPhone/iWatch/闹钟全部排定计划并清空未来排定缓存；
+    /// 启动通知开启：重新排定未来 3 天提醒并同步到 iWatch。
+    func setNotificationsEnabled(_ enabled: Bool) {
+        if enabled {
+            extendReminderSchedules()
+            pushRemindersToWatch()
+        } else {
+            cancelAllPendingReminderNotifications()
+            cancelAllScheduledAlarms()
+            let plansSnapshot = reminderLogs
+            for log in plansSnapshot where
+                log.status == "计划中" &&
+                ["iPhone 计划", "iWatch 计划", "闹钟计划"].contains(log.source) &&
+                !planResultExists(for: log) {
+                appendPlanResult(for: log, status: "取消成功")
+            }
+            for index in reminders.indices {
+                reminders[index].scheduledDates.removeAll()
+                reminders[index].scheduledAlarmIDs.removeAll()
+            }
+            ActivityReminder.saveAll(reminders)
+            pushRemindersToWatch()
+        }
+    }
+
+    // MARK: - 设置：导出 / 导入 / 自动备份
+
+    private func cancelAllPlansAndAlarms() {
+        cancelAllPendingReminderNotifications()
+        cancelAllScheduledAlarms()
+    }
+
+    func exportAllData() throws -> Data {
+        let types: [ActivityType]
+        let records: [ActivityRecord]
+        if let context = modelContext {
+            types = (try? context.fetch(FetchDescriptor<ActivityType>())) ?? []
+            records = (try? context.fetch(FetchDescriptor<ActivityRecord>())) ?? []
+        } else {
+            types = []
+            records = []
+        }
+        let snapshot = ActrailDataSnapshot(
+            version: 1,
+            exportedAt: Date(),
+            activityTypes: types.map { type in
+                ActrailBackedActivityType(
+                    id: type.id, name: type.name, iconName: type.iconName,
+                    color: type.color, group: type.group,
+                    createdAt: type.createdAt, isArchived: type.isArchived
+                )
+            },
+            activityRecords: records.map { record in
+                ActrailBackedActivityRecord(
+                    id: record.id, activityTypeId: record.activityType?.id,
+                    startTime: record.startTime, endTime: record.endTime,
+                    note: record.note, isActive: record.isActive
+                )
+            },
+            reminders: reminders,
+            reminderLogs: reminderLogs
+        )
+        return try JSONEncoder().encode(snapshot)
+    }
+
+    /// 导入数据：先清空 iPhone/iWatch/闹钟排定计划、全部历史与本地数据，
+    /// 再用备份内容重建，并重新排定提醒、同步到 iWatch。
+    func importAllData(_ data: Data) throws {
+        let decoder = JSONDecoder()
+        let snapshot = try decoder.decode(ActrailDataSnapshot.self, from: data)
+
+        cancelAllPlansAndAlarms()
+
+        guard let context = modelContext else { return }
+        for record in (try? context.fetch(FetchDescriptor<ActivityRecord>())) ?? [] {
+            context.delete(record)
+        }
+        for type in (try? context.fetch(FetchDescriptor<ActivityType>())) ?? [] {
+            context.delete(type)
+        }
+        try? context.save()
+
+        for t in snapshot.activityTypes {
+            let type = ActivityType(name: t.name, iconName: t.iconName, color: t.color, group: t.group)
+            type.id = t.id
+            type.createdAt = t.createdAt
+            type.isArchived = t.isArchived
+            context.insert(type)
+        }
+        try context.save()
+
+        let fetchedTypes = (try? context.fetch(FetchDescriptor<ActivityType>())) ?? []
+        let typeById = Dictionary(uniqueKeysWithValues: fetchedTypes.map { ($0.id, $0) })
+
+        for r in snapshot.activityRecords {
+            guard let type = typeById[r.activityTypeId ?? UUID()] else { continue }
+            let record = ActivityRecord(activityType: type)
+            record.id = r.id
+            record.startTime = r.startTime
+            record.endTime = r.endTime
+            record.note = r.note
+            record.isActive = r.isActive
+            context.insert(record)
+        }
+        try context.save()
+
+        reminders = snapshot.reminders
+        ActivityReminder.saveAll(reminders)
+        reminderLogs = snapshot.reminderLogs
+        ReminderLogEntry.saveAll(reminderLogs)
+
+        fetchActivityTypes()
+        fetchTodayRecords()
+
+        if AppSettings.notificationsEnabled {
+            extendReminderSchedules()
+        }
+        rebuildCache()
+        pushRemindersToWatch()
+        sendSync()
+    }
+
+    /// 自动备份：仅当「自动备份」开启且今天还没备份过时执行。
+    func performAutoBackupIfNeeded() {
+        guard AppSettings.autoBackupEnabled else { return }
+        if let last = AppSettings.lastAutoBackupDate, Calendar.current.isDateInToday(last) {
+            return
+        }
+        do {
+            let url = try backupDataNow()
+            AppSettings.lastAutoBackupDate = Date()
+            AppSettings.lastAutoBackupURL = url.lastPathComponent
+            print("[Backup] 自动备份完成：\(url.lastPathComponent)")
+        } catch {
+            print("[Backup] 自动备份失败：\(error)")
+        }
+    }
+
+    /// 立即导出完整数据并保存到 Documents/Backups，返回文件 URL。
+    @discardableResult
+    func backupDataNow() throws -> URL {
+        let data = try exportAllData()
+        let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let dir = base.appendingPathComponent("Backups", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        let url = dir.appendingPathComponent("Actrail-\(f.string(from: Date())).json")
+        try data.write(to: url)
+        return url
     }
 
     func requestWatchStatus() {
@@ -1259,6 +1439,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
     }
 
     func extendReminderSchedules() {
+        guard AppSettings.notificationsEnabled else { return }
         guard !reminders.isEmpty else { return }
         let calendar = Calendar.current
         let now = Date()
@@ -1475,6 +1656,66 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             .reduce(0) { $0 + $1.duration }
     }
 
+    // MARK: - 统计趋势数据
+
+    func dateRange(for period: String) -> DateInterval {
+        let calendar = Calendar.current
+        let now = Date()
+        switch period {
+        case "本周":
+            let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+            return DateInterval(start: startOfWeek, end: now)
+        case "本月":
+            let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
+            return DateInterval(start: startOfMonth, end: now)
+        default: // 今日
+            let startOfDay = calendar.startOfDay(for: now)
+            return DateInterval(start: startOfDay, end: now)
+        }
+    }
+
+    func fetchRecords(from startDate: Date, to endDate: Date) -> [ActivityRecord] {
+        guard let context = modelContext else { return [] }
+        let predicate = #Predicate<ActivityRecord> { record in
+            record.startTime >= startDate && record.startTime < endDate && !record.isActive
+        }
+        let descriptor = FetchDescriptor<ActivityRecord>(predicate: predicate, sortBy: [SortDescriptor(\.startTime, order: .reverse)])
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    func getAggregatedStats(from startDate: Date, to endDate: Date) -> (totalSeconds: Int, recordCount: Int) {
+        let records = fetchRecords(from: startDate, to: endDate)
+        let total = records.reduce(0) { $0 + Int($1.duration) }
+        return (total, records.count)
+    }
+
+    func getActivityDistribution(from startDate: Date, to endDate: Date) -> [(type: String, seconds: Int, color: String)] {
+        let records = fetchRecords(from: startDate, to: endDate)
+        var dict: [String: (seconds: Int, color: String)] = [:]
+        for record in records {
+            let name = record.activityType?.name ?? "未知"
+            let color = record.activityType?.color ?? "#8E8E93"
+            let existing = dict[name, default: (0, color)]
+            dict[name] = (existing.seconds + Int(record.duration), color)
+        }
+        return dict.map { (type: $0.key, seconds: $0.value.seconds, color: $0.value.color) }
+            .sorted { $0.seconds > $1.seconds }
+    }
+
+    func getActivityRanking(from startDate: Date, to endDate: Date) -> [(name: String, seconds: Int, color: String)] {
+        let distribution = getActivityDistribution(from: startDate, to: endDate)
+        return distribution.map { (name: $0.type, seconds: $0.seconds, color: $0.color) }
+    }
+
+    func formatDurationHuman(_ totalSeconds: Int) -> String {
+        if totalSeconds < 60 { return "\(totalSeconds)秒" }
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        if hours > 0 && minutes > 0 { return "\(hours)小时\(minutes)分钟" }
+        if hours > 0 { return "\(hours)小时" }
+        return "\(minutes)分钟"
+    }
+
     private func insertSampleData() {
         guard let context = modelContext else { return }
 
@@ -1500,4 +1741,34 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             print("Failed to save sample data: \(error)")
         }
     }
+}
+
+// MARK: - 数据快照（导出 / 导入）
+
+struct ActrailBackedActivityType: Codable {
+    var id: UUID
+    var name: String
+    var iconName: String
+    var color: String
+    var group: String
+    var createdAt: Date
+    var isArchived: Bool
+}
+
+struct ActrailBackedActivityRecord: Codable {
+    var id: UUID
+    var activityTypeId: UUID?
+    var startTime: Date
+    var endTime: Date?
+    var note: String
+    var isActive: Bool
+}
+
+struct ActrailDataSnapshot: Codable {
+    var version: Int
+    var exportedAt: Date
+    var activityTypes: [ActrailBackedActivityType]
+    var activityRecords: [ActrailBackedActivityRecord]
+    var reminders: [ActivityReminder]
+    var reminderLogs: [ReminderLogEntry]
 }

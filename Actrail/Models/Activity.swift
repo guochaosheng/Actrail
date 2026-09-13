@@ -132,7 +132,7 @@ enum CodingKeys: String, CodingKey {
     var timeString: String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
-        return "每天 \(f.string(from: date))"
+        return f.string(from: date)
     }
 
     private static let scheduleDateFormatter: DateFormatter = {
