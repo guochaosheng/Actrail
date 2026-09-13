@@ -10,6 +10,7 @@ final class ActivityType {
     var group: String
     var createdAt: Date
     var isArchived: Bool
+    var sortOrder: Int = 0
     
     init(name: String, iconName: String, color: String, group: String = "默认") {
         self.id = UUID()
@@ -19,6 +20,7 @@ final class ActivityType {
         self.group = group
         self.createdAt = Date()
         self.isArchived = false
+        self.sortOrder = 0
     }
 }
 

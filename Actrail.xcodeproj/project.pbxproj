@@ -11,19 +11,11 @@
 		32B9A0FA304AC1670068CB8F /* SharedActivity in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D400000037 /* SharedActivity */; };
 		32B9A166304AF95F0068CB8F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 32B9A165304AF95F0068CB8F /* WidgetKit.framework */; };
 		32B9A168304AF95F0068CB8F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 32B9A167304AF95F0068CB8F /* SwiftUI.framework */; };
-		32B9A177304AF9600068CB8F /* ActrailWatchComplicationExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 32B9A163304AF95F0068CB8F /* ActrailWatchComplicationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A1B2C3D400000001 /* Actrail Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000002 /* Actrail Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A1B2C3D400000026 /* ActrailWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A1B2C3D400000023 /* ActrailWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		32B9A175304AF9600068CB8F /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A1B2C3D400000010 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 32B9A162304AF95F0068CB8F;
-			remoteInfo = ActrailWatchComplicationExtension;
-		};
 		A1B2C3D400000003 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A1B2C3D400000010 /* Project object */;
@@ -41,17 +33,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		32B9A178304AF9600068CB8F /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				32B9A177304AF9600068CB8F /* ActrailWatchComplicationExtension.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		A1B2C3D400000004 /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -424,11 +405,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		32B9A176304AF9600068CB8F /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 32B9A162304AF95F0068CB8F /* ActrailWatchComplicationExtension */;
-			targetProxy = 32B9A175304AF9600068CB8F /* PBXContainerItemProxy */;
-		};
 		A1B2C3D40000001B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = A1B2C3D400000006 /* Actrail Watch App */;
@@ -472,7 +448,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-								TARGETED_DEVICE_FAMILY = 4;
+				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Debug;
@@ -507,7 +483,7 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-								TARGETED_DEVICE_FAMILY = 4;
+				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Release;
@@ -712,7 +688,7 @@
 				DEVELOPMENT_TEAM = 9WDTRCX4KN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Config/ActrailWatch-Info.plist;
+				INFOPLIST_FILE = "Config/ActrailWatch-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "行迹";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.actrail.app;
@@ -728,7 +704,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-								TARGETED_DEVICE_FAMILY = 4;
+				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Debug;
@@ -744,7 +720,7 @@
 				DEVELOPMENT_TEAM = 9WDTRCX4KN;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Config/ActrailWatch-Info.plist;
+				INFOPLIST_FILE = "Config/ActrailWatch-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "行迹";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.actrail.app;
@@ -760,7 +736,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-								TARGETED_DEVICE_FAMILY = 4;
+				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Release;

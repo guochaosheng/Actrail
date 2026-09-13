@@ -301,7 +301,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
 
     func fetchActivityTypes() {
         guard let context = modelContext else { return }
-        let descriptor = FetchDescriptor<ActivityType>(sortBy: [SortDescriptor(\.createdAt)])
+        let descriptor = FetchDescriptor<ActivityType>(sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdAt)])
         do {
             let fetched = try context.fetch(descriptor)
             activityTypes = fetched
@@ -476,6 +476,24 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             rebuildCache()
         } catch {
             print("Failed to delete activity type: \(error)")
+        }
+    }
+
+    /// 为全部活动类型重新分配连续 sortOrder（按传入顺序），用于拖拽排序后持久化。
+    func reorderActivityTypes(_ ordered: [ActivityType]) {
+        guard let context = modelContext else { return }
+        for (index, type) in ordered.enumerated() {
+            type.sortOrder = index
+        }
+        do {
+            try context.save()
+            activityTypes = ordered
+            safeTypeValues = ordered.compactMap { type in
+                (id: type.id, name: type.name, iconName: type.iconName, color: type.color, group: type.group)
+            }
+            rebuildCache()
+        } catch {
+            print("Failed to reorder activity types: \(error)")
         }
     }
 
