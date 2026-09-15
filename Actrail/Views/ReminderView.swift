@@ -7,8 +7,7 @@ struct ReminderView: View {
     @State private var reminderToEdit: ActivityReminder?
     
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
                 // 编辑/+ 按钮
                 HStack {
                     Button(action: { isEditMode.toggle() }) {
@@ -44,7 +43,9 @@ struct ReminderView: View {
                         .padding(.top, 8)
                     }
                 }
-                
+
+                ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
                 // 大标题
                 Text("提醒")
                     .font(.system(size: 34, weight: .bold))
@@ -84,6 +85,7 @@ struct ReminderView: View {
                 }
                 
                 Spacer(minLength: 80)
+            }
             }
         }
         .background(Color(.systemGroupedBackground))

@@ -262,6 +262,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
                 existing.endTime = nil
             }
         }
+        refreshSmartOrderIfNeeded()
         rebuildCache()
     }
 
@@ -299,13 +300,43 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
 
     // MARK: - Data operations
 
+    /// 智能排序：按使用频率降序、总时长降序排列活动类型，
+    /// 方便用户就近点击、减少在 iWatch 上滚动。
+    private func smartSortedTypes(from types: [ActivityType]) -> [ActivityType] {
+        guard let context = modelContext else { return types }
+        let allRecords = (try? context.fetch(FetchDescriptor<ActivityRecord>())) ?? []
+        var stats: [UUID: (count: Int, duration: TimeInterval)] = [:]
+        for record in allRecords {
+            guard let typeId = record.activityType?.id else { continue }
+            var s = stats[typeId, default: (0, 0)]
+            s.count += 1
+            s.duration += record.duration
+            stats[typeId] = s
+        }
+        return types.sorted { a, b in
+            let ca = stats[a.id]?.count ?? 0
+            let cb = stats[b.id]?.count ?? 0
+            if ca != cb { return ca > cb }
+            let da = stats[a.id]?.duration ?? 0
+            let db = stats[b.id]?.duration ?? 0
+            return da > db
+        }
+    }
+
+    /// 智能排序模式下，记录变化后重新计算排序；普通模式无操作。
+    private func refreshSmartOrderIfNeeded() {
+        guard AppSettings.activitySortMode == "smart" else { return }
+        fetchActivityTypes()
+    }
+
     func fetchActivityTypes() {
         guard let context = modelContext else { return }
         let descriptor = FetchDescriptor<ActivityType>(sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.createdAt)])
         do {
             let fetched = try context.fetch(descriptor)
-            activityTypes = fetched
-            safeTypeValues = fetched.compactMap { type in
+            let sorted = AppSettings.activitySortMode == "smart" ? smartSortedTypes(from: fetched) : fetched
+            activityTypes = sorted
+            safeTypeValues = sorted.compactMap { type in
                 (id: type.id, name: type.name, iconName: type.iconName, color: type.color, group: type.group)
             }
         } catch {
@@ -408,6 +439,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             if let typeId = record.activityType?.id {
                 safeRecordValues.append((id: record.id, activityTypeId: typeId, startTime: record.startTime, endTime: record.endTime, isActive: record.isActive, note: record.note))
             }
+            refreshSmartOrderIfNeeded()
             rebuildCache()
             sendSync()
         } catch {
@@ -426,6 +458,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
             if let idx = safeRecordValues.firstIndex(where: { $0.id == record.id }) {
                 safeRecordValues[idx] = (id: record.id, activityTypeId: safeRecordValues[idx].activityTypeId, startTime: record.startTime, endTime: record.endTime, isActive: false, note: record.note)
             }
+            refreshSmartOrderIfNeeded()
             rebuildCache()
             sendSync()
         } catch {

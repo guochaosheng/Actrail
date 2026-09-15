@@ -21,6 +21,7 @@ struct SettingsView: View {
     @AppStorage(AppSettings.notificationsEnabledKey) private var notificationsEnabled = true
     @AppStorage(AppSettings.hapticFeedbackKey) private var hapticFeedback = true
     @AppStorage(AppSettings.autoBackupKey) private var autoBackup = false
+    @AppStorage(AppSettings.activitySortModeKey) private var activitySortMode = "normal"
 
     @State private var showClearConfirm = false
     @State private var showImportPicker = false
@@ -64,6 +65,13 @@ struct SettingsView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
+                    }
+                    Picker("活动排序", selection: $activitySortMode) {
+                        Text("普通排序").tag("normal")
+                        Text("智能排序").tag("smart")
+                    }
+                    .onChange(of: activitySortMode) { _, _ in
+                        viewModel.fetchActivityTypes()
                     }
                 }
 

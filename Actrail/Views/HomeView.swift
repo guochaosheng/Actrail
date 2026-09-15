@@ -12,12 +12,14 @@ struct HomeView: View {
     @State private var dragLocation: CGPoint = .zero
     @State private var cellFrames: [UUID: CGRect] = [:]
     @State private var wiggleTick: Date = Date()
+    @AppStorage(AppSettings.activitySortModeKey) private var activitySortMode = "normal"
     private let wiggleTimer = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
+
+    private var isSmartSort: Bool { activitySortMode == "smart" }
     
     var body: some View {
         ZStack {
-            ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 0) {
                 // 编辑/+ 按钮
                 HStack {
                     Button(action: { isEditMode.toggle() }) {
@@ -49,6 +51,8 @@ struct HomeView: View {
                     .padding(.top, 8)
                 }
 
+                ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
                 // 大标题
                 Text("行迹")
                     .font(.system(size: 34, weight: .bold))
@@ -68,6 +72,7 @@ struct HomeView: View {
                     ForEach(viewModel.activeRecords) { record in
                         ActiveActivityCard(viewModel: viewModel, record: record)
                             .padding(.horizontal, 16)
+                            .padding(.bottom, 10)
                     }
                 }
 
@@ -88,7 +93,7 @@ struct HomeView: View {
                         let cell = ActivityTypeButton(
                             type: type,
                             isEditMode: isEditMode,
-                            isWiggling: isEditMode,
+                            isWiggling: isEditMode && !isSmartSort,
                             wigglePhase: Double(index) * 0.8,
                             wiggleDate: wiggleTick,
                             onDelete: {
@@ -103,7 +108,7 @@ struct HomeView: View {
                             }
                         )
                         if isEditMode {
-                            cell
+                            let base = cell
                                 .background(
                                     GeometryReader { geo in
                                         Color.clear.preference(
@@ -115,7 +120,11 @@ struct HomeView: View {
                                 .opacity(draggingTypeID == type.id ? 0.15 : 1)
                                 .scaleEffect(draggingTypeID == type.id ? 0.9 : 1)
                                 .animation(.easeInOut(duration: 0.2), value: draggingTypeID)
-                                .gesture(dragGesture(for: type))
+                            if isSmartSort {
+                                base
+                            } else {
+                                base.gesture(dragGesture(for: type))
+                            }
                         } else {
                             cell
                         }
@@ -129,6 +138,7 @@ struct HomeView: View {
                 .padding(.horizontal, 16)
 
                 Spacer(minLength: 80)
+            }
             }
         }
 
@@ -176,6 +186,11 @@ struct HomeView: View {
                 dragOrder = nil
                 dragLocation = .zero
             }
+        }
+        .onChange(of: activitySortMode) { _, _ in
+            draggingTypeID = nil
+            dragOrder = nil
+            dragLocation = .zero
         }
         .onReceive(wiggleTimer) { date in
             guard isEditMode else { return }

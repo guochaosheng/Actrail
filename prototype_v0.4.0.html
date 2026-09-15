@@ -205,11 +205,25 @@ input { font-family: inherit; }
 }
 .toggle.on .toggle-knob { transform: translateX(20px); }
 
-/* Calendar */
+/* Date header (collapsed calendar) */
+.date-header {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px 16px; margin: 0 16px; background: var(--card-bg);
+  border-radius: 12px; cursor: pointer; transition: background 0.15s;
+}
+.date-header:active { background: #E5E5EA; }
+.date-header-text { font-size: 17px; font-weight: 600; color: var(--text-primary); }
+.date-header-arrow { width: 12px; height: 12px; color: var(--text-secondary); transition: transform 0.25s; }
+.date-header-arrow.open { transform: rotate(180deg); }
 .calendar-picker {
   padding: 12px 16px 16px; background: var(--card-bg);
   margin: 0 16px 12px; border-radius: 16px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  animation: slideDown 0.25s ease;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .calendar-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -250,6 +264,34 @@ input { font-family: inherit; }
 .record-time { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; margin-top: 2px; }
 .record-duration { font-size: 15px; color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .record-active-badge { font-size: 13px; color: var(--green); }
+
+/* Timeline */
+.timeline { padding: 0 16px; }
+.timeline-item {
+  display: flex; gap: 12px; position: relative; padding-bottom: 0;
+}
+.timeline-dot-col {
+  width: 20px; display: flex; flex-direction: column; align-items: center; flex-shrink: 0;
+}
+.timeline-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 5px;
+}
+.timeline-line {
+  width: 2px; flex: 1; background: var(--separator); margin-top: 4px;
+}
+.timeline-content {
+  flex: 1; background: var(--card-bg); border-radius: 12px; padding: 12px 14px;
+  margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.timeline-time { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.timeline-name { font-size: 15px; font-weight: 500; }
+.timeline-dur { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.timeline-empty-dot {
+  width: 10px; height: 10px; border-radius: 50%; border: 2px solid #D1D1D6;
+  background: #fff; flex-shrink: 0; margin-top: 5px;
+}
+.timeline-empty-time { font-size: 12px; color: #C7C7CC; margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+.timeline-empty-label { font-size: 13px; color: #C7C7CC; }
 
 /* Statistics */
 .period-picker {
@@ -611,18 +653,20 @@ input { font-family: inherit; }
     </div>
 
     <div id="stats-day" style="display:none;">
-      <div style="padding-top:4px;">
-        <div class="calendar-picker">
-          <div class="calendar-header">
-            <button class="calendar-nav" onclick="shiftMonth(-1)">&lsaquo;</button>
-            <span id="calendar-month">2026年9月</span>
-            <button class="calendar-nav" onclick="shiftMonth(1)">&rsaquo;</button>
-          </div>
-          <div class="calendar-weekdays">
-            <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
-          </div>
-          <div class="calendar-days" id="calendar-days"></div>
+      <div class="date-header" id="date-header" onclick="toggleCalendar()">
+        <span class="date-header-text" id="date-header-text">9月10日 周三</span>
+        <svg class="date-header-arrow" id="date-header-arrow" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 4l4 4 4-4"/></svg>
+      </div>
+      <div class="calendar-picker" id="calendar-picker" style="display:none;">
+        <div class="calendar-header">
+          <button class="calendar-nav" onclick="event.stopPropagation();shiftMonth(-1)">&lsaquo;</button>
+          <span id="calendar-month">2026年9月</span>
+          <button class="calendar-nav" onclick="event.stopPropagation();shiftMonth(1)">&rsaquo;</button>
         </div>
+        <div class="calendar-weekdays">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div class="calendar-days" id="calendar-days"></div>
       </div>
       <div class="history-day-summary" id="history-day-summary"></div>
       <div id="history-records" style="margin-top:8px;"></div>
@@ -1096,6 +1140,19 @@ function fmtTime(d) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function toggleCalendar() {
+  const picker = document.getElementById('calendar-picker');
+  const arrow = document.getElementById('date-header-arrow');
+  const show = picker.style.display === 'none';
+  picker.style.display = show ? '' : 'none';
+  arrow.classList.toggle('open', show);
+}
+function updateDateHeader() {
+  const weekdays = ['周日','周一','周二','周三','周四','周五','周六'];
+  const d = new Date(calYear, calMonth, selectedDay);
+  document.getElementById('date-header-text').textContent = `${calMonth+1}月${selectedDay}日 ${weekdays[d.getDay()]}`;
+}
+
 function renderActivityGrid() {
   const el = document.getElementById('activity-grid');
   el.innerHTML = activityTypes.map((t, i) => `
@@ -1213,6 +1270,7 @@ function selectDay(d) {
 function renderHistoryRecords() {
   const el = document.getElementById('history-records');
   const summary = document.getElementById('history-day-summary');
+  updateDateHeader();
   if (historyRecords.length === 0) {
     summary.style.display = 'none';
     el.innerHTML = `<div class="empty-dashed lite">
@@ -1232,18 +1290,55 @@ function renderHistoryRecords() {
     </div>`;
     return;
   }
-  el.innerHTML = '<div class="card">' + dayRecords.map(r => `
-    <div class="record-row">
-      <div class="record-icon" style="background:${r.type.color}20;color:${r.type.color};">
-        <svg fill="currentColor" viewBox="0 0 24 24">${iconSVGs[r.type.icon]}</svg>
+  // Build timeline: sort by start time, fill gaps
+  const sorted = [...dayRecords].sort((a, b) => {
+    const ah = parseInt(a.startTime), am = parseInt(a.startTime.split(':')[1]);
+    const bh = parseInt(b.startTime), bm = parseInt(b.startTime.split(':')[1]);
+    return (ah * 60 + am) - (bh * 60 + bm);
+  });
+  const timeline = [];
+  let lastEnd = 8 * 60; // start at 08:00
+  sorted.forEach(r => {
+    const [h, m] = r.startTime.split(':').map(Number);
+    const startMin = h * 60 + m;
+    const endMin = startMin + (r.durSec || 0) / 60;
+    if (startMin > lastEnd + 15) {
+      const gH = Math.floor(lastEnd / 60), gM = lastEnd % 60;
+      timeline.push({ type: 'empty', time: `${String(gH).padStart(2,'0')}:${String(gM).padStart(2,'0')}` });
+    }
+    timeline.push({ type: 'record', ...r });
+    lastEnd = endMin;
+  });
+  if (lastEnd < 23 * 60) {
+    const gH = Math.floor(lastEnd / 60), gM = lastEnd % 60;
+    timeline.push({ type: 'empty', time: `${String(gH).padStart(2,'0')}:${String(gM).padStart(2,'0')}` });
+  }
+  el.innerHTML = '<div class="timeline">' + timeline.map((t, i) => {
+    const isLast = i === timeline.length - 1;
+    if (t.type === 'empty') {
+      return `<div class="timeline-item">
+        <div class="timeline-dot-col">
+          <div class="timeline-empty-dot"></div>
+          ${isLast ? '' : '<div class="timeline-line"></div>'}
+        </div>
+        <div class="timeline-content">
+          <div class="timeline-empty-time">${t.time}</div>
+          <div class="timeline-empty-label">无记录</div>
+        </div>
+      </div>`;
+    }
+    return `<div class="timeline-item">
+      <div class="timeline-dot-col">
+        <div class="timeline-dot" style="background:${t.type.color};"></div>
+        ${isLast ? '' : '<div class="timeline-line"></div>'}
       </div>
-      <div class="record-info">
-        <div class="record-name">${r.name}</div>
-        <div class="record-time">${r.active ? '正在进行' : r.startTime + ' 开始'}</div>
+      <div class="timeline-content">
+        <div class="timeline-time">${t.startTime}${t.active ? ' 开始' : ' - ' + t.endTime}</div>
+        <div class="timeline-name">${t.name}</div>
+        <div class="timeline-dur">${t.active ? '进行中' : t.duration}</div>
       </div>
-      ${r.active ? '<span class="record-active-badge">进行中</span>' : `<span class="record-duration">${r.duration}</span>`}
-    </div>
-  `).join('') + '</div>';
+    </div>`;
+  }).join('') + '</div>';
 }
 function fmtSec(totalSec) {
   const h = Math.floor(totalSec / 3600);

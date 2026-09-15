@@ -8,6 +8,7 @@ enum AppSettings {
     static let colorSchemeKey = "settings.colorScheme"
     static let lastAutoBackupDateKey = "settings.lastAutoBackupDate"
     static let lastAutoBackupURLKey = "settings.lastAutoBackupURL"
+    static let activitySortModeKey = "settings.activitySortMode"
 
     static let defaultAccentColorHex = "#007AFF"
 
@@ -52,5 +53,10 @@ enum AppSettings {
     static var lastAutoBackupURL: String? {
         get { UserDefaults.standard.string(forKey: lastAutoBackupURLKey) }
         set { UserDefaults.standard.set(newValue, forKey: lastAutoBackupURLKey) }
+    }
+
+    static var activitySortMode: String {
+        get { UserDefaults.standard.string(forKey: activitySortModeKey) ?? "normal" }
+        set { UserDefaults.standard.set(newValue, forKey: activitySortModeKey) }
     }
 }
