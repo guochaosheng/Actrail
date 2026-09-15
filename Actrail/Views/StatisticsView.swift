@@ -209,6 +209,7 @@ struct ActivityTimelineView: View {
     private let topPad: CGFloat = 14
     private let bottomPad: CGFloat = 24
     private let minCardHeight: CGFloat = 12
+    private let minVisibleDuration: TimeInterval = 15 * 60
     private let timeW: CGFloat = 42
     private let lineX: CGFloat = 46
     private let laneGap: CGFloat = 4
@@ -243,20 +244,28 @@ struct ActivityTimelineView: View {
             yForHour(t)
         }
 
+        // 视觉结束：活动块至少占满 15 分钟（约等于最小卡高所占时间线长）。
+        // 前者开始 + 15 分钟仍未到后者开始时 → 二者并列；已到 → 前后排列。
+        func effectiveEnd(of r: ActivityRecord) -> Date {
+            let end = r.endTime ?? now
+            let dur = end.timeIntervalSince(r.startTime)
+            return r.startTime.addingTimeInterval(max(dur, minVisibleDuration))
+        }
+
         let asc = records.sorted { $0.startTime < $1.startTime }
 
         var groups: [[ActivityRecord]] = []
         var current: [ActivityRecord] = []
         var runningEnd: Date?
         for r in asc {
-            let end = r.endTime ?? now
+            let effEnd = effectiveEnd(of: r)
             if let re = runningEnd, r.startTime <= re {
                 current.append(r)
-                if end > re { runningEnd = end }
+                if effEnd > re { runningEnd = effEnd }
             } else {
                 if !current.isEmpty { groups.append(current) }
                 current = [r]
-                runningEnd = end
+                runningEnd = effEnd
             }
         }
         if !current.isEmpty { groups.append(current) }
@@ -270,8 +279,10 @@ struct ActivityTimelineView: View {
 
             for r in group {
                 let end = r.endTime ?? now
+                let effEnd = effectiveEnd(of: r)
                 var col = -1
                 for i in 0..<colEnds.count where i < maxLanes {
+                    // 该列此前最后一块的视觉结束（距其开始≥15分钟）不早于本块开始 → 前后排列
                     if colEnds[i] <= r.startTime {
                         col = i
                         break
@@ -279,11 +290,11 @@ struct ActivityTimelineView: View {
                 }
                 if col < 0 && colEnds.count < maxLanes {
                     col = colEnds.count
-                    colEnds.append(end)
+                    colEnds.append(effEnd)
                 } else if col >= 0 {
-                    colEnds[col] = end
+                    colEnds[col] = effEnd
                 } else {
-                    overflow.append((r, end))
+                    overflow.append((r, effEnd))
                     continue
                 }
                 placed.append((r, col, end))
