@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import Charts
 
 struct StatisticsView: View {
     @Bindable var viewModel: ActivityViewModel
@@ -206,12 +208,14 @@ struct ActivityTimelineView: View {
     private let hourHeight: CGFloat = 64
     private let topPad: CGFloat = 14
     private let bottomPad: CGFloat = 24
-    private let minCardHeight: CGFloat = 56
+    private let minCardHeight: CGFloat = 12
     private let timeW: CGFloat = 42
     private let lineX: CGFloat = 46
     private let laneGap: CGFloat = 4
     private let maxLanes = 3
     private let minBlockGap: CGFloat = 3
+    private let minNameWidth: CGFloat = 30
+    private let cardHPad: CGFloat = 8
 
     private var spanStart: Date? { records.map(\.startTime).min() }
     private var spanEnd: Date? { records.map { $0.endTime ?? now }.max() }
@@ -427,7 +431,7 @@ struct ActivityTimelineView: View {
                     let cx = centerX(ev.col, ev.colCount)
 
                     // 记录卡片（顶部边框贴合起点水平线）
-                    eventCard(ev)
+                    eventCard(ev, width: w)
                         .frame(width: w, height: ev.height, alignment: .topLeading)
                         .position(x: cx, y: ev.top + ev.height / 2)
                 }
@@ -446,23 +450,88 @@ struct ActivityTimelineView: View {
         .frame(height: contentHeight)
     }
 
-    private func eventCard(_ ev: Event) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(ev.name)
-                .font(.headline)
-                .foregroundColor(.primary)
-                .lineLimit(2)
-            Text("\(Self.timeString(ev.start))（\(Int(ev.duration / 60))分）")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
+    private func eventCard(_ ev: Event, width: CGFloat) -> some View {
+        let timeText = "\(Self.timeString(ev.start))（\(Int(ev.duration / 60))分）"
+        let spec = cardSpec(height: ev.height)
+        let nameFont = Font.system(size: spec.nameSize, weight: .semibold)
+        let timeFont = Font.system(size: spec.timeSize)
+
+        // 按字号估算行高与两行布局所需高度（名称1行 + 时间1行 + 内边距）
+        let nameLineH = spec.nameSize * 1.3
+        let timeLineH = spec.timeSize * 1.3
+        let spacing: CGFloat = 3
+        let twoLine = ev.height >= nameLineH + spacing + timeLineH + spec.vPad * 2
+        // 高度足够时名称可折行，否则仅允许单行名称
+        let nameCanWrap = ev.height >= nameLineH * 2 + spacing + timeLineH + spec.vPad * 2
+
+        // 同行布局所需宽度（扣除卡片左右内边距）= 时间完整宽度 + 间距 + 名称最小可视宽度
+        let timeW = Self.textWidth(timeText, fontSize: spec.timeSize)
+        let availableW = width - cardHPad * 2
+        let sameLine = availableW >= timeW + spacing + minNameWidth
+
+        @ViewBuilder var cardContent: some View {
+            if twoLine {
+                VStack(alignment: .leading, spacing: spacing) {
+                    Text(ev.name)
+                        .font(nameFont)
+                        .foregroundColor(.primary)
+                        .lineLimit(nameCanWrap ? 2 : 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(timeText)
+                        .font(timeFont)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            } else if sameLine {
+                // 高度不足但宽度足够：时间在名称右侧同行，名称可截断、时间不压缩
+                HStack(spacing: spacing) {
+                    Text(ev.name)
+                        .font(nameFont)
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(minWidth: minNameWidth, alignment: .leading)
+                    Spacer(minLength: 0)
+                    Text(timeText)
+                        .font(timeFont)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            } else {
+                // 高度宽度均不足：仅显示名称，隐藏时间
+                Text(ev.name)
+                    .font(nameFont)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Color(hex: ev.color).opacity(0.18))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: ev.color).opacity(0.4), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        return cardContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, spec.vPad)
+            .background(Color(hex: ev.color).opacity(0.18))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: ev.color).opacity(0.4), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // 活动块高度自适应：名称/时间字号与垂直内边距随高度分档
+    private func cardSpec(height: CGFloat) -> (nameSize: CGFloat, timeSize: CGFloat, vPad: CGFloat) {
+        switch max(height, 12) {
+        case ..<18:   return (9, 8, 1)
+        case 18..<26: return (11, 8, 2)
+        case 26..<34: return (12, 9, 2)
+        case 34..<44: return (14, 10, 3)
+        case 44..<56: return (15, 11, 4)
+        case 56..<70: return (16, 11, 5)
+        default:      return (17, 12, 6)
+        }
+    }
+
+    private static func textWidth(_ text: String, fontSize: CGFloat) -> CGFloat {
+        let font = UIFont.systemFont(ofSize: fontSize)
+        return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
     private func moreBlock(count: Int) -> some View {
@@ -576,7 +645,6 @@ struct TrendStatsSection: View {
                     .font(.headline)
 
                 ActivityDistributionChart(distribution: distribution)
-                    .frame(height: 200)
                     .padding()
                     .background(Color(.systemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -669,56 +737,148 @@ struct SummaryCard: View {
 struct ActivityDistributionChart: View {
     let distribution: [(type: String, seconds: Int, color: String)]
 
-    private var totalSeconds: Int {
-        distribution.reduce(0) { $0 + $1.seconds }
+    private static let chartSize: CGFloat = 180
+    private static let outerR: CGFloat = 90
+    private static let gap: CGFloat = 3
+    private static let elbowLen: CGFloat = 14
+    private static let totalDist: CGFloat = outerR + gap // 93
+    private static let stackHeight: CGFloat = chartSize + 80 // 260
+    private static let minBendAngle: Double = 135 // 最小折角 135 度
+
+    private var sorted: [(type: String, seconds: Int, color: String)] {
+        let t = distribution.reduce(0) { $0 + $1.seconds }
+        return distribution.filter { $0.seconds > 0 && (t > 0 ? Double($0.seconds) / Double(t) * 100 >= 1 : false) }.sorted { $0.seconds > $1.seconds }
+    }
+
+    private static func labelHalfWidth(_ text: String) -> CGFloat {
+        let font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        let size = (text as NSString).size(withAttributes: [.font: font])
+        return size.width / 2
+    }
+
+    private var total: Int { distribution.reduce(0) { $0 + $1.seconds } }
+
+    private var visibleLabels: [ChartLabelEntry] {
+        let minLabelGap: CGFloat = 24
+
+        var angle: Double = -90
+        var allEntries: [ChartLabelEntry] = []
+        for it in sorted {
+            let f = Double(it.seconds) / Double(total)
+            let mid = angle + f * 180
+            let rad = mid * .pi / 180
+            allEntries.append(ChartLabelEntry(item: it, midRad: rad, isRight: cos(rad) >= 0))
+            angle += f * 360
+        }
+
+        func dedup(_ list: [ChartLabelEntry]) -> [ChartLabelEntry] {
+            var result: [ChartLabelEntry] = []
+            var lastY: CGFloat = -999
+            for e in list {
+                let y = Self.stackHeight / 2 + Self.totalDist * sin(CGFloat(e.midRad))
+                if abs(y - lastY) >= minLabelGap { result.append(e); lastY = y }
+            }
+            return result
+        }
+
+        let leftItems = dedup(allEntries.filter { !$0.isRight }.sorted { sin($0.midRad) < sin($1.midRad) })
+        let rightItems = dedup(allEntries.filter { $0.isRight }.sorted { sin($0.midRad) < sin($1.midRad) })
+        return leftItems + rightItems
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            if distribution.isEmpty {
-                Spacer()
-                Text("暂无记录")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                Spacer()
-            } else {
-                HStack(spacing: 0) {
-                    ForEach(distribution, id: \.type) { item in
-                        let fraction = totalSeconds > 0 ? Double(item.seconds) / Double(totalSeconds) : 0
-                        Rectangle()
-                            .fill(Color(hex: item.color))
-                            .frame(maxWidth: .infinity)
-                            .frame(width: 300 * fraction)
-                    }
-                }
-                .frame(height: 100)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+        if distribution.isEmpty {
+            Text("暂无记录")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 200)
+        } else {
+            let items = visibleLabels
 
-                HStack(spacing: 16) {
-                    ForEach(distribution.prefix(4), id: \.type) { item in
-                        let pct = totalSeconds > 0 ? Int(Double(item.seconds) / Double(totalSeconds) * 100) : 0
-                        LegendItem(color: Color(hex: item.color), text: "\(item.type) \(pct)%")
+            GeometryReader { geo in
+                let cardW = geo.size.width
+                let cx = cardW / 2
+                let cy = Self.stackHeight / 2
+
+                ZStack {
+                    Chart(sorted, id: \.type) { item in
+                        SectorMark(
+                            angle: .value("时长", item.seconds),
+                            innerRadius: .ratio(0.55),
+                            angularInset: 1.5
+                        )
+                        .cornerRadius(2)
+                        .foregroundStyle(Color(hex: item.color))
+                    }
+                    .frame(width: Self.chartSize, height: Self.chartSize)
+                    .position(x: cx, y: cy)
+
+                    Canvas { ctx, size in
+                        let minAngleRad = (180 - Self.minBendAngle) * .pi / 180 // 45度
+                        let hOffset = Self.elbowLen * cos(minAngleRad) // 水平分量
+                        let vOffset = Self.elbowLen * sin(minAngleRad) // 垂直分量
+
+                        for entry in items {
+                            let c = Color(hex: entry.item.color)
+                            let cosR = cos(CGFloat(entry.midRad))
+                            let sinR = sin(CGFloat(entry.midRad))
+                            let dotPt = CGPoint(x: cx + Self.totalDist * cosR, y: cy + Self.totalDist * sinR)
+
+                            // 肘点：限制折角 >= 135度，斜线至少 45 度从水平
+                            let sign: CGFloat = sinR >= 0 ? 1 : -1
+                            let elbowPt: CGPoint
+                            if entry.isRight {
+                                elbowPt = CGPoint(x: dotPt.x + hOffset, y: dotPt.y + vOffset * sign)
+                            } else {
+                                elbowPt = CGPoint(x: dotPt.x - hOffset, y: dotPt.y + vOffset * sign)
+                            }
+
+                            let hEnd = CGPoint(x: entry.isRight ? size.width - 8 : 8, y: elbowPt.y)
+
+                            var diag = Path(); diag.move(to: dotPt); diag.addLine(to: elbowPt)
+                            ctx.stroke(diag, with: .color(c.opacity(0.5)), lineWidth: 1)
+
+                            var horiz = Path(); horiz.move(to: elbowPt); horiz.addLine(to: hEnd)
+                            ctx.stroke(horiz, with: .color(c.opacity(0.5)), lineWidth: 1)
+
+                            let d: CGFloat = 4
+                            ctx.fill(Path(ellipseIn: CGRect(x: dotPt.x - d/2, y: dotPt.y - d/2, width: d, height: d)),
+                                     with: .color(c))
+                        }
+                    }
+                    .frame(width: cardW, height: Self.stackHeight)
+
+                    ForEach(Array(items.enumerated()), id: \.element.item.type) { _, entry in
+                        let cosR = cos(CGFloat(entry.midRad))
+                        let sinR = sin(CGFloat(entry.midRad))
+                        let dotPt = CGPoint(x: cx + Self.totalDist * cosR, y: cy + Self.totalDist * sinR)
+                        let minAngleRad = (180 - Self.minBendAngle) * .pi / 180
+                        let hOffset = Self.elbowLen * cos(minAngleRad)
+                        let vOffset = Self.elbowLen * sin(minAngleRad)
+                        let sign: CGFloat = sinR >= 0 ? 1 : -1
+                        let elbowY: CGFloat = entry.isRight
+                            ? dotPt.y + vOffset * sign
+                            : dotPt.y + vOffset * sign
+                        let pct = Int(Double(entry.item.seconds) / Double(total) * 100)
+                        let labelText = "\(entry.item.type) \(pct)%"
+                        let textW = Self.labelHalfWidth(labelText)
+
+                        Text(labelText)
+                            .font(.caption).fontWeight(.medium)
+                            .foregroundColor(Color(hex: entry.item.color))
+                            .position(x: entry.isRight ? cardW - 8 - textW : 8 + textW, y: elbowY - 10)
                     }
                 }
-                .font(.caption)
             }
+            .frame(height: Self.stackHeight)
         }
-        .frame(maxWidth: .infinity)
     }
 }
 
-struct LegendItem: View {
-    let color: Color
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(text)
-        }
-    }
+private struct ChartLabelEntry {
+    let item: (type: String, seconds: Int, color: String)
+    let midRad: Double
+    let isRight: Bool
 }
 
 struct ActivityRankingList: View {
