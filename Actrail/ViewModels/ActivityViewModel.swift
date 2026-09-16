@@ -364,7 +364,7 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
                 guard let typeId = record.activityType?.id else { return nil }
                 return (id: record.id, activityTypeId: typeId, startTime: record.startTime, endTime: record.endTime, isActive: record.isActive, note: record.note)
             }
-
+            var todayIDs = Set(todayRecords.map(\.id))
             // 跨日进行中记录（startTime 早于今日 0 点）也必须进缓存，
             // 否则 cachedActiveRecords 会漏掉它们，表盘「进行中活动数」比真实值偏小。
             // 同时纳入 activeRecords，使它们在 UI 里可见且可被停止（否则无法从 iPhone 停掉，
@@ -382,10 +382,33 @@ private func handleSyncFromWatch(types: [WatchSyncManager.SyncedActivityType], r
                         guard let typeId = record.activityType?.id else { continue }
                         safeRecordValues.append((id: record.id, activityTypeId: typeId, startTime: record.startTime, endTime: record.endTime, isActive: record.isActive, note: record.note))
                     }
+                    // 跨日进行中的延续块也要在统计页时间线显示（0 点起始 + 「昨日」前缀）
+                    if !todayIDs.contains(record.id) {
+                        todayRecords.append(record)
+                        todayIDs.insert(record.id)
+                    }
                 }
                 // 观测：当前全部 active 记录数（跨日修复是否生效）
                 UserDefaults.standard.set(activeAll.count, forKey: "DebugActiveAllCount")
                 UserDefaults.standard.set(Date(), forKey: "DebugActiveAllTime")
+            }
+
+            // 已完成但仍延伸到所选日内的记录（如：昨日 23:00 开始、今日 02:00 结束）：
+            // 一并纳入展示，作为当日内的「昨日」延续块。窗口 7 天足够覆盖常见跨日活动。
+            // （SwiftData 谓词不能比较可选 endTime，跨日判断放在 Swift 侧做。）
+            let windowStart = calendar.date(byAdding: .day, value: -7, to: startOfDay)!
+            let crossDescriptor = FetchDescriptor<ActivityRecord>(
+                predicate: #Predicate { $0.startTime >= windowStart && $0.startTime < startOfDay },
+                sortBy: [SortDescriptor(\.startTime, order: .reverse)]
+            )
+            if let crossAll = try? context.fetch(crossDescriptor) {
+                let now = Date()
+                for record in crossAll {
+                    let end = record.endTime ?? now
+                    guard end > startOfDay, !todayIDs.contains(record.id) else { continue }
+                    todayRecords.append(record)
+                    todayIDs.insert(record.id)
+                }
             }
 
             rebuildCache()

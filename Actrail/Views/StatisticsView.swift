@@ -179,10 +179,12 @@ struct ActivityTimelineView: View {
         let isActive: Bool
         let duration: TimeInterval
         var top: CGFloat
-        let height: CGFloat
+        var height: CGFloat
         var endY: CGFloat
         let col: Int
         let colCount: Int
+        // 跨日延续块：活动开始于所选日期之前，显示时开始时间加「昨日」前缀
+        let dayPrefix: String
     }
 
     struct OverflowBlock: Identifiable {
@@ -192,6 +194,7 @@ struct ActivityTimelineView: View {
         let count: Int
         let col: Int
         let colCount: Int
+        let items: [(name: String, start: Date, duration: TimeInterval, prefix: String)]
     }
 
     struct TimeLabel: Identifiable {
@@ -204,6 +207,7 @@ struct ActivityTimelineView: View {
     let date: Date
 
     @State private var now = Date()
+    @State private var pressPop: (x: CGFloat, y: CGFloat, items: [(name: String, start: Date, duration: TimeInterval, prefix: String)])?
 
     private let hourHeight: CGFloat = 64
     private let topPad: CGFloat = 14
@@ -214,6 +218,8 @@ struct ActivityTimelineView: View {
     private let lineX: CGFloat = 46
     private let laneGap: CGFloat = 4
     private let maxLanes = 3
+    // 上下间距 baseline=3pt：仅对“同一列”的前后排列生效（见下方重排 bump）；
+    // 跨列（并列于不同列）的块之间没有任何纵向间距约束，顶部/底部会贴死。
     private let minBlockGap: CGFloat = 3
     private let minNameWidth: CGFloat = 30
     private let cardHPad: CGFloat = 8
@@ -302,13 +308,22 @@ struct ActivityTimelineView: View {
 
             let totalLanes = overflow.isEmpty ? max(colEnds.count, 1) : maxLanes + 1
 
+            let dayStart = hourRange.first
+            let dayEnd = dayStart.addingTimeInterval(24 * 3600)
+            let gridBottom = topPad + CGFloat(hourRange.count - 1) * hourHeight
+
             for (r, col, end) in placed {
-                let top = yFor(r.startTime)
-                let bottom = yFor(end)
-                let h = max(bottom - top, minCardHeight)
+                // 跨日延续块（开始于所选日之前）：显示起点钳制到当天 0 点，开始时间加「昨日」前缀；
+                // 任何块的显示底边都不越过当天 24:00 水平虚线。
+                let isCross = r.startTime < dayStart
+                let dispStart = max(r.startTime, dayStart)
+                let dispEnd = min(end, dayEnd)
+                let top = yFor(dispStart)
+                let bottom = yFor(dispEnd)
+                let h = max(minCardHeight, min(bottom - top, gridBottom - top))
                 result.append(Event(
                     id: r.id,
-                    start: r.startTime,
+                    start: dispStart,
                     end: end,
                     name: r.activityType?.name ?? "未知",
                     color: r.activityType?.color ?? "9E9E9E",
@@ -318,52 +333,119 @@ struct ActivityTimelineView: View {
                     height: h,
                     endY: r.isActive ? bottom : top + h,
                     col: col,
-                    colCount: totalLanes
+                    colCount: totalLanes,
+                    dayPrefix: isCross ? "昨日" : ""
                 ))
             }
 
             if !overflow.isEmpty {
-                var clusters: [(top: Date, bottom: Date, count: Int)] = []
+                func popItem(for r: ActivityRecord) -> (name: String, start: Date, duration: TimeInterval, prefix: String) {
+                    let s = r.startTime
+                    let dur = r.isActive ? now.timeIntervalSince(s) : (r.endTime ?? now).timeIntervalSince(s)
+                    return (r.activityType?.name ?? "未知", s, dur, "")
+                }
+                var clusters: [(top: Date, bottom: Date, items: [(name: String, start: Date, duration: TimeInterval, prefix: String)])] = []
                 var curTop = overflow[0].record.startTime
                 var curBottom = overflow[0].end
-                var count = 1
+                var curItems = [popItem(for: overflow[0].record)]
                 for item in overflow.dropFirst() {
                     if item.record.startTime <= curBottom {
                         curBottom = max(curBottom, item.end)
-                        count += 1
+                        curItems.append(popItem(for: item.record))
                     } else {
-                        clusters.append((curTop, curBottom, count))
+                        clusters.append((curTop, curBottom, curItems))
                         curTop = item.record.startTime
                         curBottom = item.end
-                        count = 1
+                        curItems = [popItem(for: item.record)]
                     }
                 }
-                clusters.append((curTop, curBottom, count))
+                clusters.append((curTop, curBottom, curItems))
                 for c in clusters {
                     let top = yFor(c.top)
                     let bottom = yFor(c.bottom)
                     let h = max(bottom - top, minCardHeight)
-                    overflowBlocks.append(OverflowBlock(top: top, height: h, count: c.count, col: maxLanes, colCount: totalLanes))
+                    overflowBlocks.append(OverflowBlock(top: top, height: h, count: c.items.count, col: maxLanes, colCount: totalLanes, items: c.items))
                 }
             }
         }
 
-        // 同列活动块不得重叠：按开始时间顺序解算，必要时将其下移，再贴块顶部边框确定时间虚线
-        let ordered = result.sorted { $0.start < $1.start }
-        var colBottom: [Int: CGFloat] = [:]
-        var resolved: [Event] = []
+// 【纵向让位解算（仅同列：先缩上 → 缩下 → 下移；并列块顶部对齐第1列）】
+        // 规则一：让位仅限同列内，跨列互不施加阻挡。
+        //         上下活动块边框重叠（间距小于 minBlockGap）时按序处理：
+        //   ①优先缩"上方块"高度（下限 minCardHeight=12pt），拉开最小间距；
+        //   ②上方块已是最小高度、缩不动时，保持"下方块"底部水平位置不变，
+        //     缩减下方块高度，让顶边下移以维持最小间距；
+        //   ③下方块缩至最小高度仍不足时，才将下方块整体下移保持最小间距。
+        // 规则二：并列（同一开始时间的多列）块，自第2列起顶部不得低于第1列顶部水平线。
+        let ordered = result.sorted {
+            $0.start == $1.start ? $0.col < $1.col : $0.start < $1.start
+        }
+        let gridBottom = topPad + CGFloat(hourRange.count - 1) * hourHeight
+        var placed: [Event] = []
         for var ev in ordered {
-            let bump = colBottom[ev.col] ?? 0
-            let finalTop = max(ev.top, bump)
-            ev.top = finalTop
-            if !ev.isActive {
-                ev.endY = finalTop + ev.height
+            var top = ev.top
+            // 上方同列块按底部从低到高遍历，逐个尝试"①缩上 ②缩下 ③下移"
+            let above = placed
+                .sorted { ($0.top + $0.height) > ($1.top + $1.height) }
+                .filter { $0.col == ev.col }
+            for j in above {
+                var jb = j.top + j.height
+                if top < jb + minBlockGap {
+                    // ①缩上方块 j
+                    let shrinkable = j.height - minCardHeight
+                    if shrinkable > 0 {
+                        let deficit = jb + minBlockGap - top
+                        let s = min(shrinkable, deficit)
+                        if let idx = placed.firstIndex(where: { $0.id == j.id }) {
+                            placed[idx].height -= s
+                            if !placed[idx].isActive {
+                                placed[idx].endY = placed[idx].top + placed[idx].height
+                            }
+                        }
+                        jb -= s
+                    }
+                    // ②上方块已最小仍贴边 → 缩下方块 ev（底部不动、顶边下移）
+                    if top < jb + minBlockGap {
+                        let gap = jb + minBlockGap - top
+                        let shrinkableE = ev.height - minCardHeight
+                        let s2 = min(shrinkableE, gap)
+                        if s2 > 0 {
+                            top += s2
+                            ev.height -= s2
+                        }
+                    }
+                    // ③下方块缩至最小时仍不足 → 整体下移保持最小间距
+                    if top < jb + minBlockGap {
+                        top = jb + minBlockGap
+                    }
+                }
             }
-            colBottom[ev.col] = finalTop + ev.height + minBlockGap
-            resolved.append(ev)
+            ev.top = top
+            if !ev.isActive {
+                ev.endY = top + ev.height
+            }
+            // 规则二：并列多列块（同一开始时间）顶部对齐第1列顶部水平线——
+            // 自第2列起，其顶部不得低于（即不超过）第1列同起点块的顶部水平线。
+            if ev.col > 0 {
+                let firstTops = placed.filter { $0.col == 0 && abs($0.start.timeIntervalSince(ev.start)) < 60 }.map { $0.top }
+                let firstTop = firstTops.max()
+                if let firstTop = firstTop, top > firstTop {
+                    top = firstTop
+                    ev.top = top
+                    if !ev.isActive {
+                        ev.endY = top + ev.height
+                    }
+                }
+            }
+            // 底边钳制：任何活动块的底边都不得越过当天 24:00 水平虚线。
+            if ev.endY > gridBottom {
+                ev.height = max(minCardHeight, gridBottom - ev.top)
+                ev.endY = ev.top + ev.height
+            }
+            placed.append(ev)
         }
 
-        return (resolved, overflowBlocks, [])
+        return (placed, overflowBlocks, [])
     }
 
     var body: some View {
@@ -382,7 +464,7 @@ struct ActivityTimelineView: View {
         }
         .onAppear {
             now = Date()
-        }
+                    }
     }
 
     private var scheduleBody: some View {
@@ -441,9 +523,13 @@ struct ActivityTimelineView: View {
                     let w = laneW(ev.colCount)
                     let cx = centerX(ev.col, ev.colCount)
 
-                    // 记录卡片（顶部边框贴合起点水平线）
+                    // 记录卡片（顶部边框贴合起点水平线），长按手势需在 position 之前
                     eventCard(ev, width: w)
                         .frame(width: w, height: ev.height, alignment: .topLeading)
+                        .contentShape(Rectangle())
+                        .onLongPressGesture(minimumDuration: 0.4) {
+                            pressPop = (x: cx, y: max(ev.top, 0), items: [(ev.name, ev.start, ev.duration, ev.dayPrefix)])
+                        }
                         .position(x: cx, y: ev.top + ev.height / 2)
                 }
 
@@ -453,7 +539,22 @@ struct ActivityTimelineView: View {
                     let cx = centerX(ob.col, ob.colCount)
                     moreBlock(count: ob.count)
                         .frame(width: min(w, overflowSlotW), height: ob.height)
+                        .contentShape(Rectangle())
+                        .onLongPressGesture(minimumDuration: 0.4) {
+                            pressPop = (x: cx, y: max(ob.top, 0), items: ob.items)
+                        }
                         .position(x: cx, y: ob.top + ob.height / 2)
+                }
+
+                if let pop = pressPop {
+                    // 全屏透明关闭层：点击任意处关闭浮框
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { pressPop = nil }
+                        .frame(width: totalW, height: contentHeight)
+                    floatingPopover(pop.items)
+                        .position(x: min(max(pop.x, 110), totalW - 110), y: max(pop.y + 58, 70))
+                        .onTapGesture { pressPop = nil }
                 }
             }
             .frame(width: totalW, height: contentHeight)
@@ -462,7 +563,9 @@ struct ActivityTimelineView: View {
     }
 
     private func eventCard(_ ev: Event, width: CGFloat) -> some View {
-        let timeText = "\(Self.timeString(ev.start))（\(Int(ev.duration / 60))分）"
+        let timeText = ev.dayPrefix.isEmpty
+            ? "\(Self.timeString(ev.start))（\(Int(ev.duration / 60))分）"
+            : "\(ev.dayPrefix) \(Self.timeString(ev.start))（\(Int(ev.duration / 60))分）"
         let spec = cardSpec(height: ev.height)
         let nameFont = Font.system(size: spec.nameSize, weight: .semibold)
         let timeFont = Font.system(size: spec.timeSize)
@@ -543,6 +646,34 @@ struct ActivityTimelineView: View {
     private static func textWidth(_ text: String, fontSize: CGFloat) -> CGFloat {
         let font = UIFont.systemFont(ofSize: fontSize)
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+
+    // 长按浮框：每项两行（活动名 / 开始时间 + 时长），多项间用分割线隔开
+    private func floatingPopover(_ items: [(name: String, start: Date, duration: TimeInterval, prefix: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                if index > 0 {
+                    Divider()
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    Text("\(item.prefix.isEmpty ? "" : item.prefix + " ")\(Self.timeString(item.start))（\(Int(item.duration / 60))分）")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(width: 200)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 4)
     }
 
     private func moreBlock(count: Int) -> some View {
