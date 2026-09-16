@@ -369,9 +369,12 @@ struct ActivityTimelineView: View {
             }
         }
 
-// 【纵向让位解算（仅同列：先缩上 → 缩下 → 下移；并列块顶部对齐第1列）】
-        // 规则一：让位仅限同列内，跨列互不施加阻挡。
-        //         上下活动块边框重叠（间距小于 minBlockGap）时按序处理：
+// 【纵向让位解算（同列：先缩上 → 缩下 → 下移；跨列仅在上下相邻时让位；并列块顶部对齐第1列）】
+        // 规则一：让位在上下两块"纵向相邻"时施加——
+        //         同列内始终处理（含最小高度造成的视觉重叠）；
+        //         跨列仅在未真重叠（下方块顶 ≥ 上方块底）且间距小于 minBlockGap 时处理，
+        //         真重叠的并列分层块不做纵向让位。
+        //         上下活动块边框间距小于 minBlockGap 时按序处理：
         //   ①优先缩"上方块"高度（下限 minCardHeight=12pt），拉开最小间距；
         //   ②上方块已是最小高度、缩不动时，保持"下方块"底部水平位置不变，
         //     缩减下方块高度，让顶边下移以维持最小间距；
@@ -384,12 +387,15 @@ struct ActivityTimelineView: View {
         var placed: [Event] = []
         for var ev in ordered {
             var top = ev.top
-            // 上方同列块按底部从低到高遍历，逐个尝试"①缩上 ②缩下 ③下移"
+            // 上方块按底部从低到高遍历，逐个尝试"①缩上 ②缩下 ③下移"。
+            // 同列块保持原行为（含最小高度造成的视觉重叠）；
+            // 跨列块仅在"上下相邻、未真重叠"（下方顶 ≥ 上方底）时施加让位，
+            // 真重叠并列块（时间重叠、分层排布）不做纵向让位，保持分层。
             let above = placed
                 .sorted { ($0.top + $0.height) > ($1.top + $1.height) }
-                .filter { $0.col == ev.col }
             for j in above {
                 var jb = j.top + j.height
+                if j.col != ev.col && top < jb { continue }
                 if top < jb + minBlockGap {
                     // ①缩上方块 j
                     let shrinkable = j.height - minCardHeight
